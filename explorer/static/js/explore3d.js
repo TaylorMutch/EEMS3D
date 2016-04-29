@@ -3,7 +3,6 @@ $(document).ready(function(){
     var variables_list;
     var geometry, material;
     var dataset_struct;
-
     /* global colors */
     // fuzzy colors
     var veryLowColorFz =  new THREE.Color("rgb(30,89,0)");
@@ -25,7 +24,7 @@ $(document).ready(function(){
     var container = document.getElementById('scene');
     //NOTE** global - make private when we are done
     var scene = new THREE.Scene();
-    var camera = new THREE.PerspectiveCamera( 75, container.offsetWidth/container.offsetHeight, 0.1, 10000 );
+    var camera = new THREE.PerspectiveCamera( 75, container.offsetWidth/container.offsetHeight, 0.1, 100000 );
 
     var renderer = new THREE.WebGLRenderer();
     renderer.setSize( container.offsetWidth, container.offsetHeight );
@@ -46,7 +45,7 @@ $(document).ready(function(){
     var animate = function() {
         requestAnimationFrame( animate );
         render();
-    }
+    };
 
     init();
 
@@ -327,23 +326,25 @@ $(document).ready(function(){
       $.getJSON(myurl + 'variable_data', {'name':variableName}).done(
           function(data) {
               var values = new Float32Array(data[variableName]);
-              var uniforms = scene.getObjectByName("terrain").material.uniforms;
-              scene.getObjectByName("terrain").material.uniforms.minimum.value = data.min;
-              scene.getObjectByName("terrain").material.uniforms.maximum.value = data.max;
-              scene.getObjectByName("terrain").material.uniforms.fillValue.value = data.fill_value;
+              var terrain = scene.getObjectByName("terrain");
+              var uniforms = terrain.material.uniforms;
+              uniforms.minimum.value = data.min;
+              uniforms.maximum.value = data.max;
+              uniforms.fillValue.value = data.fill_value;
               var is_fuzzyBool = findParamByName(variableName, "is_fuzzy", dataset_struct.nodes);
               if (is_fuzzyBool) {
-                  scene.getObjectByName("terrain").material.uniforms.is_fuzzy.value = 1;
+                  uniforms.is_fuzzy.value = 1;
               } else {
-                  scene.getObjectByName("terrain").material.uniforms.is_fuzzy.value = 0;
+                  uniforms.is_fuzzy.value = 0;
               }
               // update per vertex attribute
-              scene.getObjectByName("terrain").geometry.getAttribute("variable_data").array = values;
-              scene.getObjectByName("terrain").geometry.getAttribute("variable_data").needsUpdate = true;
+              var buffer = terrain.geometry.getAttribute("variable_data");
+              buffer.array = values;
+              buffer.needsUpdate = true;
               var formattedVariableName = findParamByName(variableName, 'name', dataset_struct.nodes);
               // update the legend
               redrawLegend(is_fuzzyBool, formattedVariableName);
           }
       );
     }
-})
+});
