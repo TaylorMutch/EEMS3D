@@ -25,6 +25,46 @@ class MainLandingPage(View):
     def get(self, request):
         return render(request, self.template_name)
 
+class GetTileView(View):
+
+    def get(self, request, *args, **kwargs):
+        params = kwargs
+        x_start = int(params['x'])
+        x_end = x_start + 100
+        y_start = int(params['y'])
+        y_end = y_start + 100
+
+        dataset = Dataset.objects.get(pk=params['dataset'])
+        variables = Variable.objects.filter(dataset=dataset)
+        layer = params['layer']
+        for variable in variables:
+            if variable.name is layer:
+                layer = variable.name
+                break
+
+        ds = nc(dataset.data_file.path, 'r')
+        var = ds.variables[layer][:]
+        if x_start > var.shape[0] or y_start > var.shape[1]:
+            return JsonResponse({layer: 'False'})
+
+        x_end = var.shape[0] if x_end > var.shape[0] else x_end
+        y_end = var.shape[1] if y_end > var.shape[1] else y_end
+        response = dict()
+        response['fill_value'] = str(ds.variables[layer]._FillValue)
+        if isinstance(var, numpy.ma.core.MaskedArray):
+            response[layer] = var.data[x_start:x_end, y_start:y_end].ravel().tolist()
+        else:
+            response[layer] = var[x_start:x_end, y_start:y_end].ravel().tolist()
+
+        return JsonResponse(response)
+
+    def correct_value(self, value, fill):
+        if fill is False:
+            return value
+
+        actual_value = value if value is not fill else fill
+        return actual_value
+
 
 class DatasetUploadFormView(View):
     form_class = DatasetForm
@@ -89,6 +129,7 @@ class DatasetViewset(viewsets.ModelViewSet):
             response['fill_value'] = ''
         dimensions = ds.variables[name].shape
         response['dimensions'] = dimensions[0]
+        logger.info(dimensions)
         response['min'] = float(ds.variables[name][:].min())
         response['max'] = float(ds.variables[name][:].max())
         return JsonResponse(response)
