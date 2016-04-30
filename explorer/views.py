@@ -1,69 +1,86 @@
+import json
+import logging
+import os
+
+import numpy
+from django.core.urlresolvers import reverse_lazy
+from django.http import JsonResponse
+from django.shortcuts import render, redirect
+from django.views.generic import View
+from netCDF4 import Dataset as nc
+from rest_framework import viewsets
+from rest_framework.decorators import detail_route
+
+#from EEMS3D.settings import MEDIA_ROOT
+from django.conf import settings
 from explorer.forms import DatasetForm
 from explorer.models import Dataset, Variable
+from explorer.parsers import EEMS3DParser
 from explorer.serializers import DatasetSerializer, VariableSerializer
-from django.views.generic import View
-from django.shortcuts import render, redirect
-from django.core.urlresolvers import reverse_lazy
-from django.http import JsonResponse, HttpResponse
-import numpy
-from netCDF4 import Dataset as nc
-from explorer.models import Dataset, Variable
-from EEMS3D.settings import MEDIA_ROOT
-import os
-import json
-from rest_framework import viewsets, mixins, status
-from rest_framework.decorators import detail_route, list_route
-import logging
 
 logger = logging.getLogger(__name__)
 
-# Create your views here.
+class ExplorerView(View):
+    template_name = 'index.html'
+
+    def get(self, request, *args, **kwargs):
+        return render(request, self.template_name)
+
 
 class MainLandingPage(View):
-    template_name = 'index.html'
+    template_name = 'index_old.html'
 
     def get(self, request):
         return render(request, self.template_name)
 
+
 class GetTileView(View):
 
     def get(self, request, *args, **kwargs):
-        params = kwargs
-        x_start = int(params['x'])
+        x_start = int(kwargs['x'])
         x_end = x_start + 100
-        y_start = int(params['y'])
+        y_start = int(kwargs['y'])
         y_end = y_start + 100
+        layer = kwargs['layer']
+        dataset = Dataset.objects.get(pk=kwargs['dataset'])
+        response = dict()
 
-        dataset = Dataset.objects.get(pk=params['dataset'])
         variables = Variable.objects.filter(dataset=dataset)
-        layer = params['layer']
         for variable in variables:
             if variable.name is layer:
                 layer = variable.name
                 break
 
-        ds = nc(dataset.data_file.path, 'r')
+        ds = None
+        if layer is 'elev' and dataset.has_elev_file:
+            ds = nc(dataset.elev_file.path, 'r')
+        else:
+            ds = nc(dataset.data_file.path, 'r')
         var = ds.variables[layer][:]
+
         if x_start > var.shape[0] or y_start > var.shape[1]:
             return JsonResponse({layer: 'False'})
 
         x_end = var.shape[0] if x_end > var.shape[0] else x_end
         y_end = var.shape[1] if y_end > var.shape[1] else y_end
-        response = dict()
         response['fill_value'] = str(ds.variables[layer]._FillValue)
         if isinstance(var, numpy.ma.core.MaskedArray):
             response[layer] = var.data[x_start:x_end, y_start:y_end].ravel().tolist()
         else:
             response[layer] = var[x_start:x_end, y_start:y_end].ravel().tolist()
+        ds.close()
 
         return JsonResponse(response)
 
-    def correct_value(self, value, fill):
-        if fill is False:
-            return value
 
-        actual_value = value if value is not fill else fill
-        return actual_value
+class GetEEMSProgramView(View):
+
+    def get(self, request, *args, **kwargs):
+        """ Returns an EEMS program parsed into a json object """
+        dataset = Dataset.objects.get(pk=kwargs['dataset'])
+        path = dataset.eems_program.path
+        response = EEMS3DParser(path).get_model()
+        return JsonResponse(response)
 
 
 class DatasetUploadFormView(View):
@@ -79,13 +96,28 @@ class DatasetUploadFormView(View):
         if dataset.is_valid():
             ds = dataset.save()
 
-            # create variables for this dataset
-            path = os.path.join(MEDIA_ROOT, ds.data_file.url)
-            netdata = nc(path, 'r')
-            variables = list(netdata.variables.keys())
+            # add attribute variables to dataset
+            attr_data = nc(ds.data_file.path, 'r')
+            variables = list(attr_data.variables.keys())
             for var in variables:
-                variable = Variable(name=var, dataset=ds)
+                shape = attr_data.variables[var].shape
+                if len(shape) < 2:
+                    shape = [shape[0], shape[0]]
+                variable = Variable(name=var,
+                                    long_name=attr_data.variables[var].long_name,
+                                    dataset=ds,
+                                    x_dimension=shape[0],
+                                    y_dimension=shape[1]
+                                    )
                 variable.save()
+            attr_data.close()
+
+            # add elevation to dataset
+            elev_data = nc(ds.elev_file.path, 'r')
+            elev_shape = elev_data.variables['elev'].shape
+            elev_variable = Variable(name='elev', dataset=ds, x_dimension=elev_shape[0], y_dimension=elev_shape[1])
+            elev_variable.save()
+            elev_data.close()
 
             return redirect(self.success_url)
         else:
@@ -107,41 +139,41 @@ class DatasetViewset(viewsets.ModelViewSet):
         response['variables'] = varlist
         return JsonResponse(response)
 
-    @detail_route(methods=['get'])
-    def variable_data(self, request, pk=None):
-        dataset = self.get_object()
-        name = request.GET['name']
-        variables = Variable.objects.filter(dataset=dataset)
-        response = {}
-        for variable in variables:
-            if variable.name == name:
-                path = os.path.join(MEDIA_ROOT, dataset.data_file.url)
-                ds = nc(path, 'r')
-                data = ds.variables[name][:]
-                if isinstance(data, numpy.ma.core.MaskedArray):
-                    response[name] = data.data.ravel().tolist()
-                else:
-                    response[name] = data.ravel().tolist()
-                break
-        if hasattr(ds.variables[name], '_FillValue'):
-            response['fill_value'] = str(ds.variables[name]._FillValue)
-        else:
-            response['fill_value'] = ''
-        dimensions = ds.variables[name].shape
-        response['dimensions'] = dimensions[0]
-        logger.info(dimensions)
-        response['min'] = float(ds.variables[name][:].min())
-        response['max'] = float(ds.variables[name][:].max())
-        return JsonResponse(response)
+    #@detail_route(methods=['get'])
+    #def variable_data(self, request, pk=None):
+    #    dataset = self.get_object()
+    #    name = request.GET['name']
+    #    variables = Variable.objects.filter(dataset=dataset)
+    #    response = {}
+    #    for variable in variables:
+    #        if variable.name == name:
+    #            path = os.path.join(settings.MEDIA_ROOT, dataset.data_file.url)
+    #            ds = nc(path, 'r')
+    #            data = ds.variables[name][:]
+    #            if isinstance(data, numpy.ma.core.MaskedArray):
+    #                response[name] = data.data.ravel().tolist()
+    #            else:
+    #                response[name] = data.ravel().tolist()
+    #            break
+    #    if hasattr(ds.variables[name], '_FillValue'):
+    #        response['fill_value'] = str(ds.variables[name]._FillValue)
+    #    else:
+    #        response['fill_value'] = ''
+    #    dimensions = ds.variables[name].shape
+    #    response['dimensions'] = dimensions[0]
+    #    logger.info(dimensions)
+    #    response['min'] = float(ds.variables[name][:].min())
+    #    response['max'] = float(ds.variables[name][:].max())
+    #    return JsonResponse(response)
 
-    @detail_route(methods=['get'])
-    def dataset_struct(self, request, pk=None):
-        ''' A temporary function for determining the structure of the eems data '''
-        dataset = self.get_object()
-        path = os.path.join(MEDIA_ROOT, 'eems-files/' + dataset.data_file.url.split('/')[1].split('.')[0] + '.json')
-        #path = dataset.eems_file.url
-        response = json.load(open(path))
-        return JsonResponse(response[0])
+    #@detail_route(methods=['get'])
+    #def dataset_struct(self, request, pk=None):
+    #    ''' A temporary function for determining the structure of the eems data '''
+    #    dataset = self.get_object()
+    #    path = os.path.join(settings.MEDIA_ROOT, 'eems-files/' + dataset.data_file.url.split('/')[1].split('.')[0] + '.json')
+    #    #path = dataset.eems_file.url
+    #    response = json.load(open(path))
+    #    return JsonResponse(response[0])
 
 
 class VariableViewset(viewsets.ModelViewSet):

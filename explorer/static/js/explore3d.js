@@ -341,9 +341,9 @@ $(document).ready(function(){
               var buffer = terrain.geometry.getAttribute("variable_data");
               buffer.array = values;
               buffer.needsUpdate = true;
-              var formattedVariableName = findParamByName(variableName, 'name', dataset_struct.nodes);
+              //var formattedVariableName = findParamByName(variableName, 'name', dataset_struct.nodes);
               // update the legend
-              redrawLegend(is_fuzzyBool, formattedVariableName);
+              //redrawLegend(is_fuzzyBool, formattedVariableName);
           }
       );
     }

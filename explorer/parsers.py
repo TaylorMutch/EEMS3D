@@ -1,4 +1,4 @@
-from EEMSBasePackage import EEMSProgram
+from EEMSBasePackage3Fix import EEMSProgram
 
 
 class EEMS3DParser(object):
