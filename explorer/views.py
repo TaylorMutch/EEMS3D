@@ -1,7 +1,3 @@
-import json
-import logging
-import os
-
 import numpy
 from django.core.urlresolvers import reverse_lazy
 from django.http import JsonResponse
@@ -11,14 +7,11 @@ from netCDF4 import Dataset as nc
 from rest_framework import viewsets
 from rest_framework.decorators import detail_route
 
-#from EEMS3D.settings import MEDIA_ROOT
 from django.conf import settings
 from explorer.forms import DatasetForm
 from explorer.models import Dataset, Variable
 from explorer.parsers import EEMS3DParser
 from explorer.serializers import DatasetSerializer, VariableSerializer
-
-logger = logging.getLogger(__name__)
 
 class ExplorerView(View):
     template_name = 'index.html'
@@ -32,6 +25,34 @@ class MainLandingPage(View):
 
     def get(self, request):
         return render(request, self.template_name)
+
+
+class DataInfoView(View):
+
+    def get(self, request, *args, **kwargs):
+        layer = str(kwargs['layer'])
+        dataset = Dataset.objects.get(pk=kwargs['dataset'])
+        response = dict()
+
+        variables = Variable.objects.filter(dataset=dataset)
+        for variable in variables:
+            if variable.name is layer:
+                layer = variable.name
+                break
+
+        ds = None
+        if layer is 'elev' and dataset.has_elev_file:
+            ds = nc(dataset.elev_file.path, 'r')
+        else:
+            ds = nc(dataset.data_file.path, 'r')
+        var = ds.variables[layer][:]
+
+        minimum = float(var.min())
+        maximum = float(var.max())
+
+        ds.close()
+        response[layer] = {'min': minimum, 'max': maximum}
+        return JsonResponse(response)
 
 
 class GetTileView(View):
@@ -124,6 +145,7 @@ class DatasetUploadFormView(View):
             return render(request, self.template_name, {'form': self.form_class()})
 
 
+"""
 class DatasetViewset(viewsets.ModelViewSet):
     queryset = Dataset.objects.all()
     serializer_class = DatasetSerializer
@@ -180,3 +202,4 @@ class VariableViewset(viewsets.ModelViewSet):
     queryset = Variable.objects.all()
     serializer_class = VariableSerializer
 
+"""
