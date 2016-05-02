@@ -108,7 +108,7 @@ $(document).ready(function(){
               addRecursiveData(childNode, currentNode);
             }
             return false;
-          }
+          };
           addRecursiveData(dataset_struct.nodes);
           var chart = new google.visualization.OrgChart(document.getElementById("eems-tree"));
           chart.draw(data, {allowHtml: true, allowCollapse: true, size: 'small'});

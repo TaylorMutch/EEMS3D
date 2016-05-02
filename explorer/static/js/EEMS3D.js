@@ -1,6 +1,8 @@
 /**
  * Created by taylor on 4/29/2016.
  */
+var data;
+var eems;
 $(document).ready(function() {
 
     var variables_list;
@@ -86,12 +88,106 @@ $(document).ready(function() {
  */
 
 
-/*
-    TODO - Reimplement the legend
 
-    TODO - Implement classify and legend methods in Django to serve the values that we need
+    // TODO - Reimplement the legend
+        // get the initial eems data structure
+        $.getJSON('eems-program', function(response) {
+            var eems = response;
+            google.charts.load('current', {packages: ["orgchart"]});
+            google.charts.setOnLoadCallback(drawChart);
+            function drawChart() {
+                data = new google.visualization.DataTable();
+                data.addColumn('string', 'Variable');	// pk
+                data.addColumn('string', 'Parent');	// fk to Variable
+                data.addColumn('boolean', 'IsFuzzy');	// is_fuzzy
 
- */
+                $.each(eems.nodes, function(key,value) {
+                    if (value.children) {
+                        for (var i = 0; i < value.children.length; i++) {
+                            var childName = value.children[i];
+                            if (childName == 'elev') continue;
+                            var childNode = eems.nodes[childName];
+                            data.addRow([
+                                {
+                                    v: childName,
+                                    f: childName + "<div style='color:blue;'>" + eems.nodes[childName].operation + "</div>"
+                                },
+                                key,
+                                childNode.is_fuzzy
+                            ]);
+                        }
+                    }
+                });
+                // todo - fix root
+                var keys = data.getDistinctValues(0);
+                var root;
+                $.each(eems.nodes, function(key,value) {
+                    var found = true;
+                    if (key != 'elev') {
+                        for (var i = 0; i < keys.length; i++) {
+                            if (keys[i] == key) {
+                                found = false;
+                                break;
+                            }
+                        }
+                        if (found) {
+                            root = key;
+                            return false;
+                        }
+                    }
+                });
+                var rootNode = eems.nodes[root];
+                data.addRow([
+                    {
+                        v: root,
+                        f: root + "<div style='color:blue;'>" + rootNode.operation + "</div>"
+                    },
+                    "",
+                    rootNode.is_fuzzy
+                ]);
+
+                var chart = new google.visualization.OrgChart(document.getElementById("eems-tree"));
+                chart.draw(data, {allowHtml: true, allowCollapse: true, size: 'small'});
+
+                function selectHandler() {
+                    var selection = chart.getSelection();
+                    if (selection.length > 0) {
+                        updateVariable(data.getValue(selection[0].row, 0));
+                    }
+                }
+
+                google.visualization.events.addListener(chart, 'select', selectHandler);
+            }
+        });
+
+    // TODO - Implement classify and legend methods in Django to serve the values that we need
+    // go get the variable data and attach it to the scene.
+    function updateVariable(variableName) {
+        //$.getJSON(myurl + 'variable_data', {'name': variableName}).done(
+        //    function (data) {
+        //        var values = new Float32Array(data[variableName]);
+        //        var terrain = scene.getObjectByName("terrain");
+        //        var uniforms = terrain.material.uniforms;
+        //        uniforms.minimum.value = data.min;
+        //        uniforms.maximum.value = data.max;
+        //        uniforms.fillValue.value = data.fill_value;
+        //        var is_fuzzyBool = findParamByName(variableName, "is_fuzzy", dataset_struct.nodes);
+        //        if (is_fuzzyBool) {
+        //            uniforms.is_fuzzy.value = 1;
+        //        } else {
+        //            uniforms.is_fuzzy.value = 0;
+        //        }
+        //        // update per vertex attribute
+        //        var buffer = terrain.geometry.getAttribute("variable_data");
+        //        buffer.array = values;
+        //        buffer.needsUpdate = true;
+        //        //var formattedVariableName = findParamByName(variableName, 'name', dataset_struct.nodes);
+        //        // update the legend
+        //        //redrawLegend(is_fuzzyBool, formattedVariableName);
+        //    }
+        //);
+    }
+
 
     }
 });
