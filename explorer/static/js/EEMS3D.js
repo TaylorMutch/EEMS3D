@@ -1,13 +1,9 @@
 /**
  * Created by taylor on 4/29/2016.
  */
-var data;
-var eems;
 $(document).ready(function() {
-
-    var variables_list;
-    var geometry, material;
-    var dataset_struct;
+    var eems; // TODO - uncomment this when in production
+    var material;   // GLOBAL material that all tiles will inherit from
     /* global colors */
     // fuzzy colors
     var veryLowColorFz = new THREE.Color("rgb(30,89,0)");
@@ -63,45 +59,33 @@ $(document).ready(function() {
     }
 
     function init() {
-        //var location = window.location.pathname.toString();
-//var datasetID = location.split('/')[location.split('/').length-1];
+        /*
+         TODO - Implement a grid of THREE.BufferPlaneGeometry objects as TILES
 
-//console.log(datasetID);
+         Each tile will correspond to an ID assigned by:
+         Getting the max size of the variable data (max_x, max_y)
+         Starting at (0,0) and going by 100 increments, we send requests to \tiles\layer\x\y
+         and load the buffer z values (i+2), then prepare the data buffer for each plane.
 
-// TODO - Implement dataset picker
-// if id is null, then we ask user to specify what dataset they want to view
+         Variables can be found at... TODO - Implement variable list retrieval in Django side
 
+         We then get the first variable in the EEMS variable list and load the data buffer for each plane
+         in the same way that we do for the elevation data.
 
-/*
-    TODO - Implement a grid of THREE.BufferPlaneGeometry objects as TILES
+         */
 
-    Each tile will correspond to an ID assigned by:
-        Getting the max size of the variable data (max_x, max_y)
-        Starting at (0,0) and going by 100 increments, we send requests to \tiles\layer\x\y
-        and load the buffer z values (i+2), then prepare the data buffer for each plane.
-
-        Variables can be found at... TODO - Implement variable list retrieval in Django side
-
-        We then get the first variable in the EEMS variable list and load the data buffer for each plane
-        in the same way that we do for the elevation data.
-
- */
-
-
-
-    // TODO - Reimplement the legend
-        // get the initial eems data structure
-        $.getJSON('eems-program', function(response) {
+        // get the EEMS program
+        $.getJSON('eems-program', function (response) {
             var eems = response;
             google.charts.load('current', {packages: ["orgchart"]});
             google.charts.setOnLoadCallback(drawChart);
             function drawChart() {
-                data = new google.visualization.DataTable();
+                var data = new google.visualization.DataTable();
                 data.addColumn('string', 'Variable');	// pk
                 data.addColumn('string', 'Parent');	// fk to Variable
                 data.addColumn('boolean', 'IsFuzzy');	// is_fuzzy
 
-                $.each(eems.nodes, function(key,value) {
+                $.each(eems.nodes, function (key, value) {
                     if (value.children) {
                         for (var i = 0; i < value.children.length; i++) {
                             var childName = value.children[i];
@@ -118,12 +102,12 @@ $(document).ready(function() {
                         }
                     }
                 });
-                // todo - fix root
+                // hack to add the root back in
                 var keys = data.getDistinctValues(0);
                 var root;
-                $.each(eems.nodes, function(key,value) {
+                $.each(eems.nodes, function (key, value) {
                     var found = true;
-                    if (key != 'elev') {
+                    if (key != 'elev') {    // ignore keys that read for elevation data, not important in EEMS
                         for (var i = 0; i < keys.length; i++) {
                             if (keys[i] == key) {
                                 found = false;
@@ -155,16 +139,48 @@ $(document).ready(function() {
                         updateVariable(data.getValue(selection[0].row, 0));
                     }
                 }
-
                 google.visualization.events.addListener(chart, 'select', selectHandler);
             }
         });
+    }
 
-    // TODO - Implement classify and legend methods in Django to serve the values that we need
+    function redrawLegend(variable_name) {
+        var legendContainer = $('#legend');
+        var variableNode = eems.nodes[variable_name];
+
+        legendContainer.empty();
+        legendContainer.append('<div class="panel-heading">' + variable_name + '</div>');
+        legendContainer.append('<div class="panel-body"></div>');
+        var colors;
+        var colorstrings;
+        if (variableNode.is_fuzzy) {
+            // draw fuzzy color
+            colors = [veryLowColorFz, lowColorFz, moderateColorFz, highColorFz, veryHighColorFz];
+            colorstrings = ["Very Low", "Low", "Moderate", "High", "Very High"];
+        } else {
+            // draw other color legend
+            colors = [veryLowColor, lowColor, moderateLowColor, moderateHighColor, highColor, veryHighColor];
+            colorstrings = ["Very Low", "Low", "Moderate-Low", "Moderate-High", "High", "Very High"];
+        }
+        colors.push(noDataColor);
+        colorstrings.push("No Data");
+
+        // draw the legend colors
+        for (var i = 0; i < colors.length; i++) {
+            var legendBody = $('.panel-body:last');
+            var color = colors[i];
+            legendBody.append('<div class="legend-element"><canvas class="legend-image"></canvas><div class="legend-label"></div></div>');
+            var context = $('.legend-image:last')[0].getContext('2d');
+            context.fillStyle = color.getStyle();
+            context.fillRect(0, 0, $('.legend-image:last')[0].width, $('.legend-image:last')[0].height);
+            $('.legend-label:last')[0].innerHTML = colorstrings[i];
+        }
+    }
+
     // go get the variable data and attach it to the scene.
     function updateVariable(variableName) {
-        //$.getJSON(myurl + 'variable_data', {'name': variableName}).done(
-        //    function (data) {
+        $.getJSON(variableName + '/dimensions/').done(
+            function (data) {
         //        var values = new Float32Array(data[variableName]);
         //        var terrain = scene.getObjectByName("terrain");
         //        var uniforms = terrain.material.uniforms;
@@ -183,11 +199,8 @@ $(document).ready(function() {
         //        buffer.needsUpdate = true;
         //        //var formattedVariableName = findParamByName(variableName, 'name', dataset_struct.nodes);
         //        // update the legend
-        //        //redrawLegend(is_fuzzyBool, formattedVariableName);
-        //    }
-        //);
-    }
-
-
+                redrawLegend(variableName);
+            }
+        );
     }
 });
