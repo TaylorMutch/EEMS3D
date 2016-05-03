@@ -87,12 +87,14 @@ class GetTileView(View):
         y_end = var.shape[1] if y_end > var.shape[1] else y_end
         response['fill_value'] = str(ds.variables[layer]._FillValue)
         if isinstance(var, numpy.ma.core.MaskedArray):
-            sub_matrix = var.data[x_start:x_end, y_start:y_end]
+            #sub_matrix = var.data[x_start:x_end, y_start:y_end]
+            sub_matrix = var.data[y_start:y_end, x_start:x_end]
             response[layer] = sub_matrix.ravel().tolist()
             response['x'] = sub_matrix.shape[0]
             response['y'] = sub_matrix.shape[1]
         else:
-            sub_matrix = var[x_start:x_end, y_start:y_end]
+            #sub_matrix = var[x_start:x_end, y_start:y_end]
+            sub_matrix = var[y_start:y_end, x_start:x_end]
             response[layer] = sub_matrix.ravel().tolist()
             response['x'] = sub_matrix.shape[0]
             response['y'] = sub_matrix.shape[1]

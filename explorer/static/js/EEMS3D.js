@@ -36,8 +36,10 @@ $(document).ready(function() {
     container.appendChild(renderer.domElement);
     window.addEventListener('resize', onWindowResize, false);
 
-    camera.position.set(0, -1500, 80);
+    camera.position.set(0,0, 40000);
     camera.up.set(0, 0, 1);
+    var initialCameraLookAt = new THREE.Vector3(0,0,0);
+    camera.lookAt(initialCameraLookAt);
     var orbit = new THREE.OrbitControls(camera, renderer.domElement);
 
     // our single render pass
@@ -63,21 +65,6 @@ $(document).ready(function() {
     }
 
     function init() {
-        /*
-         TODO - Implement a grid of THREE.BufferPlaneGeometry objects as TILES
-
-         Each tile will correspond to an ID assigned by:
-         Getting the max size of the variable data (max_x, max_y)
-         Starting at (0,0) and going by 100 increments, we send requests to \tiles\layer\x\y
-         and load the buffer z values (i+2), then prepare the data buffer for each plane.
-
-         Variables can be found at... TODO - Implement variable list retrieval in Django side
-
-         We then get the first variable in the EEMS variable list and load the data buffer for each plane
-         in the same way that we do for the elevation data.
-
-         */
-
         // get the EEMS program
         $.getJSON('eems-program', function (response) {
             eems = response;
@@ -148,7 +135,6 @@ $(document).ready(function() {
         });
 
         // get the dimensions of the elevation attribute
-
         $.getJSON('elev/dimensions', function(response) {
             dimensions = response['elev'];
             x_tiles = Math.ceil(dimensions.x/EEMS_TILE_SIZE[0]);
@@ -165,13 +151,10 @@ $(document).ready(function() {
                     var width = response.x;
                     var height = response.y;
                     if (width == EEMS_TILE_SIZE[0] && height == EEMS_TILE_SIZE[1]) { // TODO - figure out how to incorporate the edges
-
                         var geometry = new THREE.PlaneBufferGeometry(THREE_TILE_SIZE[0], THREE_TILE_SIZE[1],
                             width-1, height-1);
                         var posBuffer = geometry.getAttribute('position').array;
-
-                        // account for missing values in the elevation data // TODO - move this to the django side
-                        for (var i = 0; i < elev_data.length; i++) {    // TODO - move this to a function
+                        function correctedValue(i) { // TODO - move this to the django side
                             if (elev_data[i] == fill_value) { // get neighbors and average their values
                                 /*
                                  __________
@@ -213,9 +196,12 @@ $(document).ready(function() {
                                 if (numToAverage != 0) average = average / numToAverage;
                                 elev_data[i] = average;
                             }
-
+                            return elev_data[i];
+                        }
+                        // account for missing values in the elevation data
+                        for (var i = 0; i < elev_data.length; i++) {
                             // set the actual z positions
-                            posBuffer[i * 3 + 2] = elev_data[i];    // z
+                            posBuffer[i * 3 + 2] = correctedValue(i);
                         }
                         geometry.computeVertexNormals();
                         geometry.translate(world_x_offset, world_y_offset,0);
