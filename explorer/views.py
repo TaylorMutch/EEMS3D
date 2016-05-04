@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 from django.core.urlresolvers import reverse_lazy
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
@@ -7,6 +7,9 @@ from netCDF4 import Dataset as nc
 from explorer.forms import DatasetForm
 from explorer.models import Dataset, Variable
 from explorer.parsers import EEMS3DParser
+
+EEMS_TILE_SIZE = (500,500)
+
 
 class ExplorerView(View):
     template_name = 'index.html'
@@ -28,13 +31,16 @@ class DataInfoView(View):
         layer = str(kwargs['layer'])
         dataset = Dataset.objects.get(pk=kwargs['dataset'])
         response = dict()
-        #myvariable = None  # TODO - figure out why variable filter is not working
-        #variables = Variable.objects.filter(dataset=dataset)
-        #for variable in variables:
-        #    if variable.name is layer:
-        #        layer = variable.name
-        #        myvariable = variable
-        #        break
+        variables = Variable.objects.filter(dataset=dataset)
+        found = False
+        for variable in variables:
+            if variable.name == layer:
+                layer = variable.name
+                found = True
+                break
+
+        if not found:
+            return JsonResponse({layer: 'False'})
 
         ds = None
         if layer == 'elev' and dataset.has_elev_file:
@@ -57,26 +63,29 @@ class GetTileView(View):
 
     def get(self, request, *args, **kwargs):
         x_start = int(kwargs['x'])
-        x_end = x_start + 100
+        x_end = x_start + EEMS_TILE_SIZE[0]
         y_start = int(kwargs['y'])
-        y_end = y_start + 100
+        y_end = y_start + EEMS_TILE_SIZE[1]
         layer = kwargs['layer']
         dataset = Dataset.objects.get(pk=kwargs['dataset'])
         response = dict()
 
-        #variables = Variable.objects.filter(dataset=dataset)
-        #for variable in variables:
-        #    if variable.name is layer:
-        #        layer = variable.name
-        #        break
+        variables = Variable.objects.filter(dataset=dataset)
+
+        found = False
+        for variable in variables:
+            if variable.name == layer:
+                layer = variable.name
+                found = True
+                break
+
+        if not found:
+            return JsonResponse({layer : 'False'})
 
         ds = None
-        path = ""
         if layer == 'elev' and dataset.has_elev_file:
-            path = dataset.elev_file.path
             ds = nc(dataset.elev_file.path, 'r')
         else:
-            path = dataset.data_file.path
             ds = nc(dataset.data_file.path, 'r')
         var = ds.variables[layer][:]
 
@@ -86,14 +95,12 @@ class GetTileView(View):
         x_end = var.shape[0] if x_end > var.shape[0] else x_end
         y_end = var.shape[1] if y_end > var.shape[1] else y_end
         response['fill_value'] = str(ds.variables[layer]._FillValue)
-        if isinstance(var, numpy.ma.core.MaskedArray):
-            #sub_matrix = var.data[x_start:x_end, y_start:y_end]
+        if isinstance(var, np.ma.core.MaskedArray):
             sub_matrix = var.data[y_start:y_end, x_start:x_end]
             response[layer] = sub_matrix.ravel().tolist()
             response['x'] = sub_matrix.shape[0]
             response['y'] = sub_matrix.shape[1]
         else:
-            #sub_matrix = var[x_start:x_end, y_start:y_end]
             sub_matrix = var[y_start:y_end, x_start:x_end]
             response[layer] = sub_matrix.ravel().tolist()
             response['x'] = sub_matrix.shape[0]

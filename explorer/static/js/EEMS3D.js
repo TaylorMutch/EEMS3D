@@ -3,8 +3,8 @@
  */
 $(document).ready(function() {
     /* global EEMS variables */
-    var EEMS_TILE_SIZE = [100,100];
-    var THREE_TILE_SIZE = [2000, 2000];
+    var EEMS_TILE_SIZE = [500,500];
+    var THREE_TILE_SIZE = [2000 * EEMS_TILE_SIZE[0]/100, 2000 * EEMS_TILE_SIZE[1]/100];
     var x_tiles, y_tiles, dimensions, fill_value;
     var eems;
     var material;   // GLOBAL material that all tiles will inherit from
@@ -25,7 +25,7 @@ $(document).ready(function() {
 
     // setup THREEjs scene
     var container = document.getElementById('scene');
-    scene = new THREE.Scene();  // TODO - make private when we are done
+    var scene = new THREE.Scene();
     var camera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 100000);
 
     var renderer = new THREE.WebGLRenderer();
@@ -143,79 +143,80 @@ $(document).ready(function() {
 
     function CreateOneTile(tile_group, x,y,x_offset,y_offset,world_x_offset,world_y_offset) {
         $.getJSON('elev/tiles/' + x*EEMS_TILE_SIZE[0] + '/' + y*EEMS_TILE_SIZE[1], function(response) {
-                    var elev_data = response['elev'];
-                    fill_value = Number(response.fill_value);
-                    var width = response.x;
-                    var height = response.y;
-                    if (width == EEMS_TILE_SIZE[0] && height == EEMS_TILE_SIZE[1]) { // TODO - figure out how to incorporate the edges
-                        var geometry = new THREE.PlaneBufferGeometry(THREE_TILE_SIZE[0], THREE_TILE_SIZE[1],
-                            width - 1, height - 1);
-                        // add initial variable attribute and fill it with dummy data
-                        var dummyVar = new Float32Array(width * height);
-                        dummyVar.fill(0);
-                        var variable_attr = new THREE.BufferAttribute(dummyVar, 1);
-                        geometry.addAttribute('variable_data', variable_attr);
+            var elev_data = response['elev'];
+            fill_value = Number(response.fill_value);
+            var width = response.x;
+            var height = response.y;
+            //if (width == EEMS_TILE_SIZE[0] && height == EEMS_TILE_SIZE[1]) { // TODO - figure out how to incorporate the edges
+                var geometry = new THREE.PlaneBufferGeometry(THREE_TILE_SIZE[0], THREE_TILE_SIZE[1],
+                    width - 1, height - 1);
+                // add initial variable attribute and fill it with dummy data
+                var dummyVar = new Float32Array(width * height);
+                dummyVar.fill(0);
+                var variable_attr = new THREE.BufferAttribute(dummyVar, 1);
+                geometry.addAttribute('variable_data', variable_attr);
 
-                        // add height values
-                        var posBuffer = geometry.getAttribute('position').array;
-                        function correctedValue(i) { // TODO - move this to the django side
-                            if (elev_data[i] == fill_value) { // get neighbors and average their values
-                                /*
-                                 __________
-                                 |NW|_N_|NE|
-                                 |W_|_i_|_E|
-                                 |SW|_S_|SE|
-                                 */
-                                var values = [];
-                                if (i < elev_data.length - width) {          // we are not on the bottom side;
-                                    values.push(elev_data[(i + width)]);       // south
-                                    if (i % width != 0) {                    // we are not on the left side
-                                        values.push(elev_data[i - 1]);              // west
-                                        values.push(elev_data[(i + width) - 1]); // southwest
-                                    }
-                                    else if (((i + 1) % width) != 0) {       // we are not on the right side
-                                        values.push(elev_data[i + 1]);              // east
-                                        values.push(elev_data[(i + width) + 1]); // southeast
-                                    }
-                                }
-                                if (i >= width) {                           // we are not on the top side
-                                    values.push(elev_data[i - width]);         // north
-                                    if (i % width != 0) {                    // we are not on the left side
-                                        values.push(elev_data[i - 1]);              // west
-                                        values.push(elev_data[(i - width) - 1]); // northwest
-                                    }
-                                    else if (((i + 1) % width) != 0) {       // we are not on the right side
-                                        values.push(elev_data[i + 1]);              // east
-                                        values.push(elev_data[(i - width) + 1]); // northeast
-                                    }
-                                }
-                                var average = 0;
-                                var numToAverage = 0;
-                                for (var j = 0; j < values.length; j++) { // take the average of collected values
-                                    if (values[j] != fill_value) {
-                                        average += values[j];
-                                        numToAverage += 1;
-                                    }
-                                }
-                                if (numToAverage != 0) average = average / numToAverage;
-                                elev_data[i] = average;
+                // add height values
+                var posBuffer = geometry.getAttribute('position').array;
+
+                function correctedValue(i) { // TODO - move this to the django side
+                    if (elev_data[i] == fill_value) { // get neighbors and average their values
+                        /*
+                         __________
+                         |NW|_N_|NE|
+                         |W_|_i_|_E|
+                         |SW|_S_|SE|
+                         */
+                        var values = [];
+                        if (i < elev_data.length - width) {          // we are not on the bottom side;
+                            values.push(elev_data[(i + width)]);       // south
+                            if (i % width != 0) {                    // we are not on the left side
+                                values.push(elev_data[i - 1]);              // west
+                                values.push(elev_data[(i + width) - 1]); // southwest
                             }
-                            return elev_data[i];
+                            else if (((i + 1) % width) != 0) {       // we are not on the right side
+                                values.push(elev_data[i + 1]);              // east
+                                values.push(elev_data[(i + width) + 1]); // southeast
+                            }
                         }
-
-                        // account for missing values in the elevation data
-                        for (var i = 0; i < elev_data.length; i++) {
-                            // set the actual z positions
-                            posBuffer[i * 3 + 2] = correctedValue(i);
+                        if (i >= width) {                           // we are not on the top side
+                            values.push(elev_data[i - width]);         // north
+                            if (i % width != 0) {                    // we are not on the left side
+                                values.push(elev_data[i - 1]);              // west
+                                values.push(elev_data[(i - width) - 1]); // northwest
+                            }
+                            else if (((i + 1) % width) != 0) {       // we are not on the right side
+                                values.push(elev_data[i + 1]);              // east
+                                values.push(elev_data[(i - width) + 1]); // northeast
+                            }
                         }
-                        geometry.computeVertexNormals();
-                        geometry.translate(world_x_offset, world_y_offset, 0);
-                        geometry.translate(x_offset, y_offset, 0);
-                        var tile = new THREE.Mesh(geometry, material);
-                        tile.userData = {x: x*EEMS_TILE_SIZE[0], y: y*EEMS_TILE_SIZE[1]};
-                        tile_group.add(tile);
+                        var average = 0;
+                        var numToAverage = 0;
+                        for (var j = 0; j < values.length; j++) { // take the average of collected values
+                            if (values[j] != fill_value) {
+                                average += values[j];
+                                numToAverage += 1;
+                            }
+                        }
+                        if (numToAverage != 0) average = average / numToAverage;
+                        elev_data[i] = average;
                     }
-                });
+                    return elev_data[i];
+                }
+
+                // account for missing values in the elevation data
+                for (var i = 0; i < elev_data.length; i++) {
+                    // set the actual z positions
+                    posBuffer[i * 3 + 2] = correctedValue(i);
+                }
+                geometry.computeVertexNormals();
+                geometry.translate(world_x_offset, world_y_offset, 0);
+                geometry.translate(x_offset, y_offset, 0);
+                var tile = new THREE.Mesh(geometry, material);
+                tile.userData = {x: x * EEMS_TILE_SIZE[0], y: y * EEMS_TILE_SIZE[1]};
+                tile_group.add(tile);
+            //}
+        });
     }
 
     function CreateTiles() {
@@ -343,11 +344,9 @@ $(document).ready(function() {
         Animate();
     }
 
-    function UpdateTiles(variable_name) {
-        var tiles = scene.children[0].children;
-        for (var i = 0; i < tiles.length; i++) {
-            var tile = tiles[i];
-            var x = tile.userData.x;
+    function UpdateTile(tile, variable_name) {
+
+        var x = tile.userData.x;
             var y = tile.userData.y;
             $.getJSON(variable_name + '/tiles/' + x + '/' + y, function(response) {
                 var attribute_data = new Float32Array(response[variable_name]);
@@ -355,6 +354,13 @@ $(document).ready(function() {
                 buffer.array = attribute_data;
                 buffer.needsUpdate = true;
             })
+    }
+
+    function UpdateTiles(variable_name) {
+        var tiles = scene.children[0].children;
+        for (var i = 0; i < tiles.length; i++) {
+            var tile = tiles[i];
+            UpdateTile(tile, variable_name);
         }
     }
 
