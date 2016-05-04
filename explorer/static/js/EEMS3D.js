@@ -1,9 +1,6 @@
 /**
  * Created by taylor on 4/29/2016.
  */
-
-var global_eems;
-
 $(document).ready(function() {
     /* global EEMS variables */
     var EEMS_TILE_SIZE = [100,100];
@@ -43,18 +40,18 @@ $(document).ready(function() {
     var orbit = new THREE.OrbitControls(camera, renderer.domElement);
 
     // our single render pass
-    var render = function () {
+    var Render = function () {
         orbit.update();
         renderer.render(scene, camera);
     };
 
     // our animation loop
-    var animate = function () {
-        requestAnimationFrame(animate);
-        render();
+    var Animate = function () {
+        requestAnimationFrame(Animate);
+        Render();
     };
 
-    init();
+    Init();
 
     // utility function for when the browser window is resized
     function onWindowResize() {
@@ -64,7 +61,7 @@ $(document).ready(function() {
         camera.updateProjectionMatrix();
     }
 
-    function init() {
+    function Init() {
         // get the EEMS program
         $.getJSON('eems-program', function (response) {
             eems = response;
@@ -127,7 +124,7 @@ $(document).ready(function() {
                 function selectHandler() {
                     var selection = chart.getSelection();
                     if (selection.length > 0) {
-                        updateVariable(data.getValue(selection[0].row, 0));
+                        UpdateVariable(data.getValue(selection[0].row, 0));
                     }
                 }
                 google.visualization.events.addListener(chart, 'select', selectHandler);
@@ -152,7 +149,14 @@ $(document).ready(function() {
                     var height = response.y;
                     if (width == EEMS_TILE_SIZE[0] && height == EEMS_TILE_SIZE[1]) { // TODO - figure out how to incorporate the edges
                         var geometry = new THREE.PlaneBufferGeometry(THREE_TILE_SIZE[0], THREE_TILE_SIZE[1],
-                            width-1, height-1);
+                            width - 1, height - 1);
+                        // add initial variable attribute and fill it with dummy data
+                        var dummyVar = new Float32Array(width * height);
+                        dummyVar.fill(0);
+                        var variable_attr = new THREE.BufferAttribute(dummyVar, 1);
+                        geometry.addAttribute('variable_data', variable_attr);
+
+                        // add height values
                         var posBuffer = geometry.getAttribute('position').array;
                         function correctedValue(i) { // TODO - move this to the django side
                             if (elev_data[i] == fill_value) { // get neighbors and average their values
@@ -198,22 +202,23 @@ $(document).ready(function() {
                             }
                             return elev_data[i];
                         }
+
                         // account for missing values in the elevation data
                         for (var i = 0; i < elev_data.length; i++) {
                             // set the actual z positions
                             posBuffer[i * 3 + 2] = correctedValue(i);
                         }
                         geometry.computeVertexNormals();
-                        geometry.translate(world_x_offset, world_y_offset,0);
-                        geometry.translate(x_offset, y_offset,0);
+                        geometry.translate(world_x_offset, world_y_offset, 0);
+                        geometry.translate(x_offset, y_offset, 0);
                         var tile = new THREE.Mesh(geometry, material);
+                        tile.userData = {x: x*EEMS_TILE_SIZE[0], y: y*EEMS_TILE_SIZE[1]};
                         tile_group.add(tile);
                     }
                 });
     }
 
     function CreateTiles() {
-
         var world_width = x_tiles * THREE_TILE_SIZE[0];
         var world_height = y_tiles * THREE_TILE_SIZE[1];
         var world_x_offset = -1 * world_width / 2 + THREE_TILE_SIZE[0]/ 2;
@@ -335,16 +340,26 @@ $(document).ready(function() {
         }
 
         scene.add(tile_group);
-        animate();
+        Animate();
     }
 
-    function UpdateTiles() {
-        // This function will update the global material
-        // and individual tile data attributes
+    function UpdateTiles(variable_name) {
+        var tiles = scene.children[0].children;
+        for (var i = 0; i < tiles.length; i++) {
+            var tile = tiles[i];
+            var x = tile.userData.x;
+            var y = tile.userData.y;
+            $.getJSON(variable_name + '/tiles/' + x + '/' + y, function(response) {
+                var attribute_data = new Float32Array(response[variable_name]);
+                var buffer = tile.geometry.getAttribute("variable_data");
+                buffer.array = attribute_data;
+                buffer.needsUpdate = true;
+            })
+        }
     }
 
 
-    function redrawLegend(variable_name) {
+    function RedrawLegend(variable_name) {
         var legendContainer = $('#legend');
         var variableNode = eems.nodes[variable_name];
 
@@ -378,28 +393,23 @@ $(document).ready(function() {
     }
 
     // go get the variable data and attach it to the scene.
-    function updateVariable(variableName) {
+    function UpdateVariable(variableName) {
         $.getJSON(variableName + '/dimensions/').done(
-            function (data) {
-        //        var values = new Float32Array(data[variableName]);
-        //        var terrain = scene.getObjectByName("terrain");
-        //        var uniforms = terrain.material.uniforms;
-        //        uniforms.minimum.value = data.min;
-        //        uniforms.maximum.value = data.max;
-        //        uniforms.fillValue.value = data.fill_value;
-        //        var is_fuzzyBool = findParamByName(variableName, "is_fuzzy", dataset_struct.nodes);
-        //        if (is_fuzzyBool) {
-        //            uniforms.is_fuzzy.value = 1;
-        //        } else {
-        //            uniforms.is_fuzzy.value = 0;
-        //        }
-        //        // update per vertex attribute
-        //        var buffer = terrain.geometry.getAttribute("variable_data");
-        //        buffer.array = values;
-        //        buffer.needsUpdate = true;
-        //        //var formattedVariableName = findParamByName(variableName, 'name', dataset_struct.nodes);
-        //        // update the legend
-                redrawLegend(variableName);
+            function (response) {
+                dimensions = response[variableName];
+                var uniforms = material.uniforms;
+                uniforms.minimum.value = dimensions.min;
+                uniforms.maximum.value = dimensions.max;
+                fill_value = Number(dimensions.fill_value);
+                uniforms.fillValue.value = fill_value;
+                var is_fuzzy = eems.nodes[variableName].is_fuzzy;
+                if (is_fuzzy) {
+                    uniforms.is_fuzzy.value = 1;
+                } else {
+                    uniforms.is_fuzzy.value = 0;
+                }
+                UpdateTiles(variableName);
+                RedrawLegend(variableName);
             }
         );
     }
