@@ -14,7 +14,8 @@ uniform vec3 veryHighColor;
 //colors for fuzzy color ramp
 uniform vec3 veryLowColorFz;
 uniform vec3 lowColorFz;
-uniform vec3 moderateColorFz;
+uniform vec3 moderateLowColorFz;
+uniform vec3 moderateHighColorFz;
 uniform vec3 highColorFz;
 uniform vec3 veryHighColorFz;
 
@@ -33,13 +34,15 @@ void main() {
     vViewPosition = -mvPosition.xyz;
 
     if (is_fuzzy > 0) {   // use fuzzy color ramp
-        if (variable_data > 0.6) {
+        if (variable_data > 0.75) {
             active_color = veryHighColorFz;
-        } else if (variable_data > 0.2) {
+        } else if (variable_data > 0.5) {
             active_color = highColorFz;
-        } else if (variable_data > -0.2) {
-            active_color = moderateColorFz;
-        } else if (variable_data > -0.6) {
+        } else if (variable_data > 0.0) {
+            active_color = moderateHighColorFz;
+        } else if (variable_data > -0.5) {
+            active_color = moderateLowColorFz;
+        } else if (variable_data > -.75){
             active_color = lowColorFz;
         } else {
             active_color = veryLowColorFz;

@@ -4,7 +4,7 @@
 $(document).ready(function() {
     /* global EEMS variables */
     var EEMS_TILE_SIZE = [500,500];
-    var THREE_TILE_SIZE = [2000 * EEMS_TILE_SIZE[0]/100, 2000 * EEMS_TILE_SIZE[1]/100];
+    var THREE_TILE_SIZE = [4000 * EEMS_TILE_SIZE[0]/100, 4000 * EEMS_TILE_SIZE[1]/100];
     var x_tiles, y_tiles, dimensions, fill_value;
     var eems;
     var material;   // GLOBAL material that all tiles will inherit from
@@ -12,7 +12,8 @@ $(document).ready(function() {
     /* global colors */
     var veryLowColorFz = new THREE.Color("rgb(30,89,0)");
     var lowColorFz = new THREE.Color("rgb(64,128,21)");
-    var moderateColorFz = new THREE.Color("rgb(122,184,92)");
+    var moderateLowColorFz = new THREE.Color("rgb(96,160,45)");
+    var moderateHighColorFz = new THREE.Color("rgb(142,194,120)");
     var highColorFz = new THREE.Color("rgb(183,219,164)");
     var veryHighColorFz = new THREE.Color("rgb(255,255,255)");
     var veryLowColor = new THREE.Color("rgb(205,102,102)");
@@ -61,8 +62,8 @@ $(document).ready(function() {
         camera.updateProjectionMatrix();
     }
 
+    /* get the EEMS program and initialize the explorer GUI */
     function Init() {
-        // get the EEMS program
         $.getJSON('eems-program', function (response) {
             eems = response;
             google.charts.load('current', {packages: ["orgchart"]});
@@ -90,33 +91,34 @@ $(document).ready(function() {
                         }
                     }
                 });
-                // hack to add the root back in
+                // hack to add the root nodes back in
                 var keys = data.getDistinctValues(0);
-                var root;
+                var rootNodes = [];
                 $.each(eems.nodes, function (key, value) {
-                    var found = true;
+                    var notFound = true;
                     if (key != 'elev') {    // ignore keys that read for elevation data, not important in EEMS
                         for (var i = 0; i < keys.length; i++) {
                             if (keys[i] == key) {
-                                found = false;
+                                notFound = false;
                                 break;
                             }
                         }
-                        if (found) {
-                            root = key;
-                            return false;
+                        if (notFound) { // We found a node without a parent
+                            rootNodes.push(key);
                         }
                     }
                 });
-                var rootNode = eems.nodes[root];
-                data.addRow([
-                    {
-                        v: root,
-                        f: root + "<div style='color:blue;'>" + rootNode.operation + "</div>"
-                    },
-                    "",
-                    rootNode.is_fuzzy
-                ]);
+                for (var i = 0; i < rootNodes.length; i++) {
+                    var rootNode = eems.nodes[rootNodes[i]];
+                    data.addRow([
+                        {
+                            v: rootNodes[i],
+                            f: rootNodes[i] + "<div style='color: blue;'>" + rootNode.operation + "</div>"
+                        },
+                        "",
+                        rootNode.is_fuzzy
+                    ]);
+                }
 
                 var chart = new google.visualization.OrgChart(document.getElementById("eems-tree"));
                 chart.draw(data, {allowHtml: true, allowCollapse: true, size: 'small'});
@@ -127,6 +129,7 @@ $(document).ready(function() {
                         UpdateVariable(data.getValue(selection[0].row, 0));
                     }
                 }
+
                 google.visualization.events.addListener(chart, 'select', selectHandler);
             }
         });
@@ -141,13 +144,122 @@ $(document).ready(function() {
         });
     }
 
-    function CreateOneTile(tile_group, x,y,x_offset,y_offset,world_x_offset,world_y_offset) {
-        $.getJSON('elev/tiles/' + x*EEMS_TILE_SIZE[0] + '/' + y*EEMS_TILE_SIZE[1], function(response) {
-            var elev_data = response['elev'];
-            fill_value = Number(response.fill_value);
-            var width = response.x;
-            var height = response.y;
-            //if (width == EEMS_TILE_SIZE[0] && height == EEMS_TILE_SIZE[1]) { // TODO - figure out how to incorporate the edges
+
+    /* Create the initial tiles in the scene */
+    function CreateTiles() {
+
+        material = new THREE.ShaderMaterial({
+            uniforms: {
+                minimum: {type: "f", value: -1.0},
+                maximum: {type: "f", value: 1.0},
+                fillValue: {type: "f", value: fill_value},
+                is_fuzzy: {type: "i", value: 1},    // THREEjs/webgl apparently doesn't allow boolean types yet
+                veryLowColorFz: {type: "c", value: veryLowColorFz},
+                lowColorFz: {type: "c", value: lowColorFz},
+                moderateLowColorFz: {type: "c", value: moderateLowColorFz},
+                moderateHighColorFz: {type: "c", value: moderateHighColorFz},
+                highColorFz: {type: "c", value: highColorFz},
+                veryHighColorFz: {type: "c", value: veryHighColorFz},
+                veryLowColor: {type: "c", value: veryLowColor},
+                lowColor: {type: "c", value: lowColor},
+                moderateLowColor: {type: "c", value: moderateLowColor},
+                moderateHighColor: {type: "c", value: moderateHighColor},
+                highColor: {type: "c", value: highColor},
+                veryHighColor: {type: "c", value: veryHighColor},
+                noDataColor: {type: "c", value: noDataColor}
+            },
+            vertexShader: [
+                "uniform float minimum;",
+                "uniform float maximum;",
+                "uniform float fillValue;",
+                "uniform int is_fuzzy;",
+                "",
+                "//colors for normal color ramp",
+                "uniform vec3 veryLowColor;",
+                "uniform vec3 lowColor;",
+                "uniform vec3 moderateLowColor;",
+                "uniform vec3 moderateHighColor;",
+                "uniform vec3 highColor;",
+                "uniform vec3 veryHighColor;",
+                "",
+                "//colors for fuzzy color ramp",
+                "uniform vec3 veryLowColorFz;",
+                "uniform vec3 lowColorFz;",
+                "uniform vec3 moderateLowColorFz;",
+                "uniform vec3 moderateHighColorFz;",
+                "uniform vec3 highColorFz;",
+                "uniform vec3 veryHighColorFz;",
+                "",
+                "//no data color",
+                "uniform vec3 noDataColor;",
+                "attribute float variable_data;",
+                "varying vec3 active_color;",
+                "",
+                "varying vec3 vNormal;",
+                "varying vec3 vViewPosition;",
+                "",
+                "void main() {",
+                "   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+                "   vNormal = normalize(normalMatrix * normal);",   // hacking a pointlight
+                "   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);",
+                "   vViewPosition = -mvPosition.xyz;",
+                "",
+                "if (is_fuzzy > 0) {   // use fuzzy color ramp",
+                "   if (variable_data > 0.75) {",
+                "       active_color = veryHighColorFz;",
+                "   } else if (variable_data > 0.5) {",
+                "       active_color = highColorFz;",
+                "   } else if (variable_data > 0.0) {",
+                "       active_color = moderateHighColorFz;",
+                "   } else if (variable_data > -0.5) {",
+                "       active_color = moderateLowColorFz;",
+                "   } else if (variable_data > -.75){",
+                "       active_color = lowColorFz;",
+                "   } else {",
+                "       active_color = veryLowColorFz;",
+                "   }",
+                "   } else {",  // use misc color ramp
+                "       float domain = maximum - minimum;",
+                "       if (variable_data > (minimum + domain*0.95)) {",
+                "           active_color = veryHighColor;",
+                "       } else if (variable_data > (minimum + domain*0.66)) {",
+                "           active_color = highColor;",
+                "       } else if (variable_data > (minimum + domain*0.5)) {",
+                "           active_color = moderateHighColor;",
+                "       } else if (variable_data > (minimum + domain*0.33)) {",
+                "           active_color = moderateLowColor;",
+                "       } else if (variable_data > (minimum + domain*0.05)) {",
+                "           active_color = lowColor;",
+                "       } else {",
+                "           active_color = veryLowColor;",
+                "       }",
+                "   }",
+                "   if (variable_data == fillValue) {",
+                "       active_color = noDataColor;",
+                "   }",
+                "}"
+            ].join("\n"),
+            fragmentShader: [
+                "varying vec3 active_color;",
+                "",
+                "varying vec3 vNormal;",
+                "varying vec3 vViewPosition;",
+                "",
+                "void main() {",
+                "   vec3 normal = normalize(vNormal);",    // hacking a pointlight
+                "   vec3 lightDir = normalize(vViewPosition);",
+                "   float dotProduct = max( dot(normal, lightDir), 0.0);",
+                "   gl_FragColor = vec4(active_color, 1) * dotProduct;",
+                "}"
+            ].join("\n")
+        });
+
+        function CreateOneTile(tile_group, x,y,x_offset,y_offset,world_x_offset,world_y_offset) {
+            $.getJSON('elev/tiles/' + x * EEMS_TILE_SIZE[0] + '/' + y * EEMS_TILE_SIZE[1], function (response) {
+                var elev_data = response['elev'];
+                fill_value = Number(response.fill_value);
+                var width = response.x;
+                var height = response.y;
                 var geometry = new THREE.PlaneBufferGeometry(THREE_TILE_SIZE[0], THREE_TILE_SIZE[1],
                     width - 1, height - 1);
                 // add initial variable attribute and fill it with dummy data
@@ -215,118 +327,15 @@ $(document).ready(function() {
                 var tile = new THREE.Mesh(geometry, material);
                 tile.userData = {x: x * EEMS_TILE_SIZE[0], y: y * EEMS_TILE_SIZE[1]};
                 tile_group.add(tile);
-            //}
-        });
-    }
+            });
+        }
 
-    function CreateTiles() {
         var world_width = x_tiles * THREE_TILE_SIZE[0];
         var world_height = y_tiles * THREE_TILE_SIZE[1];
         var world_x_offset = -1 * world_width / 2 + THREE_TILE_SIZE[0]/ 2;
         var world_y_offset = world_height / 2 - THREE_TILE_SIZE[1]/2;
         var tile_group = new THREE.Group();
 
-        material = new THREE.ShaderMaterial({
-            uniforms : {    // NOTE**these can be changed and will be to update the necessary components with new data
-                minimum: { type: "f", value: -1.0},
-                maximum: { type: "f", value: 1.0},
-                fillValue: {type: "f", value: fill_value},
-                is_fuzzy: { type: "i", value: 1},    // THREEjs/webgl apparently doesn't allow boolean types yet
-                veryLowColorFz: { type: "c", value: veryLowColorFz},
-                lowColorFz: { type: "c", value: lowColorFz},
-                moderateColorFz: { type: "c", value: moderateColorFz},
-                highColorFz: { type: "c", value: highColorFz},
-                veryHighColorFz: { type: "c", value: veryHighColorFz},
-                veryLowColor: { type: "c", value: veryLowColor},
-                lowColor: { type: "c", value: lowColor},
-                moderateLowColor: { type: "c", value: moderateLowColor},
-                moderateHighColor: { type: "c", value: moderateHighColor},
-                highColor: { type: "c", value: highColor},
-                veryHighColor: { type: "c", value: veryHighColor},
-                noDataColor: {type: "c", value: noDataColor}
-            },
-            vertexShader: [
-                "uniform float minimum;",
-                "uniform float maximum;",
-                "uniform float fillValue;",
-                "uniform int is_fuzzy;",
-                "",
-                "//colors for normal color ramp",
-                "uniform vec3 veryLowColor;",
-                "uniform vec3 lowColor;",
-                "uniform vec3 moderateLowColor;",
-                "uniform vec3 moderateHighColor;",
-                "uniform vec3 highColor;",
-                "uniform vec3 veryHighColor;",
-                "",
-                "//colors for fuzzy color ramp",
-                "uniform vec3 veryLowColorFz;",
-                "uniform vec3 lowColorFz;",
-                "uniform vec3 moderateColorFz;",
-                "uniform vec3 highColorFz;",
-                "uniform vec3 veryHighColorFz;",
-                "",
-                "//no data color",
-                "uniform vec3 noDataColor;",
-                "attribute float variable_data;",
-                "varying vec3 active_color;",
-                "",
-                "varying vec3 vNormal;",
-                "varying vec3 vViewPosition;",
-                "",
-                "void main() {",
-                "   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
-                "   vNormal = normalize(normalMatrix * normal);",   // hacking a pointlight
-                "   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);",
-                "   vViewPosition = -mvPosition.xyz;",
-                "",
-                "   if (is_fuzzy > 0) {",   // use fuzzy color ramp
-                "       if (variable_data > 0.6) {",
-                "           active_color = veryHighColorFz;",
-                "       } else if (variable_data > 0.2) {",
-                "           active_color = highColorFz;",
-                "       } else if (variable_data > -0.2) {",
-                "           active_color = moderateColorFz;",
-                "       } else if (variable_data > -0.6) {",
-                "           active_color = lowColorFz;",
-                "       } else {",
-                "           active_color = veryLowColorFz;",
-                "       }",
-                "   } else {",  // use misc color ramp
-                "       float domain = maximum - minimum;",
-                "       if (variable_data > (minimum + domain*0.95)) {",
-                "           active_color = veryHighColor;",
-                "       } else if (variable_data > (minimum + domain*0.66)) {",
-                "           active_color = highColor;",
-                "       } else if (variable_data > (minimum + domain*0.5)) {",
-                "           active_color = moderateHighColor;",
-                "       } else if (variable_data > (minimum + domain*0.33)) {",
-                "           active_color = moderateLowColor;",
-                "       } else if (variable_data > (minimum + domain*0.05)) {",
-                "           active_color = lowColor;",
-                "       } else {",
-                "           active_color = veryLowColor;",
-                "       }",
-                "   }",
-                "   if (variable_data == fillValue) {",
-                "       active_color = noDataColor;",
-                "   }",
-                "}"
-            ].join("\n"),
-            fragmentShader: [
-                "varying vec3 active_color;",
-                "",
-                "varying vec3 vNormal;",
-                "varying vec3 vViewPosition;",
-                "",
-                "void main() {",
-                "   vec3 normal = normalize(vNormal);",    // hacking a pointlight
-                "   vec3 lightDir = normalize(vViewPosition);",
-                "   float dotProduct = max( dot(normal, lightDir), 0.0);",
-                "   gl_FragColor = vec4(active_color, 1) * dotProduct;",
-                "}"
-            ].join("\n")
-        });
 
         var local_x_offset = 0;
         var local_y_offset = 0;
@@ -344,27 +353,28 @@ $(document).ready(function() {
         Animate();
     }
 
-    function UpdateTile(tile, variable_name) {
+    /* Update the tiles in the scene */
+    function UpdateTiles(variable_name) {
 
-        var x = tile.userData.x;
+        function UpdateOneTile(tile, variable_name) {
+            var x = tile.userData.x;
             var y = tile.userData.y;
-            $.getJSON(variable_name + '/tiles/' + x + '/' + y, function(response) {
+            $.getJSON(variable_name + '/tiles/' + x + '/' + y, function (response) {
                 var attribute_data = new Float32Array(response[variable_name]);
                 var buffer = tile.geometry.getAttribute("variable_data");
                 buffer.array = attribute_data;
                 buffer.needsUpdate = true;
             })
-    }
+        }
 
-    function UpdateTiles(variable_name) {
         var tiles = scene.children[0].children;
         for (var i = 0; i < tiles.length; i++) {
             var tile = tiles[i];
-            UpdateTile(tile, variable_name);
+            UpdateOneTile(tile, variable_name);
         }
     }
 
-
+    /* Update the legend with the new variable name */
     function RedrawLegend(variable_name) {
         var legendContainer = $('#legend');
         var variableNode = eems.nodes[variable_name];
@@ -373,15 +383,14 @@ $(document).ready(function() {
         legendContainer.append('<div class="panel-heading">' + variable_name + '</div>');
         legendContainer.append('<div class="panel-body"></div>');
         var colors;
-        var colorstrings;
+        var colorstrings = ["Very Low", "Low", "Moderate-Low", "Moderate-High", "High", "Very High"];
+
         if (variableNode.is_fuzzy) {
             // draw fuzzy color
-            colors = [veryLowColorFz, lowColorFz, moderateColorFz, highColorFz, veryHighColorFz];
-            colorstrings = ["Very Low", "Low", "Moderate", "High", "Very High"];
+            colors = [veryLowColorFz, lowColorFz, moderateLowColorFz, moderateHighColorFz, highColorFz, veryHighColorFz];
         } else {
             // draw other color legend
             colors = [veryLowColor, lowColor, moderateLowColor, moderateHighColor, highColor, veryHighColor];
-            colorstrings = ["Very Low", "Low", "Moderate-Low", "Moderate-High", "High", "Very High"];
         }
         colors.push(noDataColor);
         colorstrings.push("No Data");
@@ -395,11 +404,11 @@ $(document).ready(function() {
             var context = lastLegendImage.getContext('2d');
             context.fillStyle = color.getStyle();
             context.fillRect(0, 0, lastLegendImage.width, lastLegendImage.height);
-            lastLegendImage.innerHTML = colorstrings[i];
+            $('.legend-label:last')[0].innerHTML = colorstrings[i];
         }
     }
 
-    // go get the variable data and attach it to the scene.
+    /* Fetch the new variable info, update scene material, and update the tiles. */
     function UpdateVariable(variableName) {
         $.getJSON(variableName + '/dimensions/').done(
             function (response) {
