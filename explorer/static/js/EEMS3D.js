@@ -391,10 +391,11 @@ $(document).ready(function() {
             var legendBody = $('.panel-body:last');
             var color = colors[i];
             legendBody.append('<div class="legend-element"><canvas class="legend-image"></canvas><div class="legend-label"></div></div>');
-            var context = $('.legend-image:last')[0].getContext('2d');
+            var lastLegendImage = $('.legend-image:last')[0];
+            var context = lastLegendImage.getContext('2d');
             context.fillStyle = color.getStyle();
-            context.fillRect(0, 0, $('.legend-image:last')[0].width, $('.legend-image:last')[0].height);
-            $('.legend-label:last')[0].innerHTML = colorstrings[i];
+            context.fillRect(0, 0, lastLegendImage.width, lastLegendImage.height);
+            lastLegendImage.innerHTML = colorstrings[i];
         }
     }
 
