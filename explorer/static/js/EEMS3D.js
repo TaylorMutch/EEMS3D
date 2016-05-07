@@ -3,8 +3,9 @@
  */
 $(document).ready(function() {
     /* global EEMS variables */
+    waitingDialog.show('Loading dataset...');
     var EEMS_TILE_SIZE = [500,500];
-    var THREE_TILE_SIZE = [4000 * EEMS_TILE_SIZE[0]/100, 4000 * EEMS_TILE_SIZE[1]/100];
+    var THREE_TILE_SIZE = [800 * 100, 800 * 100];
     var x_tiles, y_tiles, dimensions, fill_value;
     var eems;
     var material;   // GLOBAL material that all tiles will inherit from
@@ -27,7 +28,7 @@ $(document).ready(function() {
     // setup THREEjs scene
     var container = document.getElementById('scene');
     var scene = new THREE.Scene();
-    var camera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 100000);
+    var camera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 10000000);
 
     var renderer = new THREE.WebGLRenderer();
     renderer.setSize(container.offsetWidth, container.offsetHeight);
@@ -254,7 +255,10 @@ $(document).ready(function() {
             ].join("\n")
         });
 
+        var numRequestsSent = 0;
+
         function CreateOneTile(tile_group, x,y,x_offset,y_offset,world_x_offset,world_y_offset) {
+            numRequestsSent++;
             $.getJSON('elev/tiles/' + x * EEMS_TILE_SIZE[0] + '/' + y * EEMS_TILE_SIZE[1], function (response) {
                 var elev_data = response['elev'];
                 fill_value = Number(response.fill_value);
@@ -327,6 +331,10 @@ $(document).ready(function() {
                 var tile = new THREE.Mesh(geometry, material);
                 tile.userData = {x: x * EEMS_TILE_SIZE[0], y: y * EEMS_TILE_SIZE[1]};
                 tile_group.add(tile);
+                numRequestsSent--;
+                if (numRequestsSent ==0 ) {
+                    waitingDialog.hide();
+                }
             });
         }
 
@@ -355,8 +363,10 @@ $(document).ready(function() {
 
     /* Update the tiles in the scene */
     function UpdateTiles(variable_name) {
-
+        waitingDialog.show('Updated variable to ' + variable_name);
+        var numRequestsSent = 0;
         function UpdateOneTile(tile, variable_name) {
+            numRequestsSent++;
             var x = tile.userData.x;
             var y = tile.userData.y;
             $.getJSON(variable_name + '/tiles/' + x + '/' + y, function (response) {
@@ -364,6 +374,10 @@ $(document).ready(function() {
                 var buffer = tile.geometry.getAttribute("variable_data");
                 buffer.array = attribute_data;
                 buffer.needsUpdate = true;
+                numRequestsSent--;
+                if (numRequestsSent == 0) {
+                    waitingDialog.hide();
+                }
             })
         }
 
