@@ -123,7 +123,7 @@ class GetEEMSProgramView(View):
 class DatasetUploadFormView(View):
     form_class = DatasetForm
     template_name = 'upload.html'
-    success_url = reverse_lazy('explore')
+    success_url = reverse_lazy('explore')   # TODO - fix this redirect on file uploads
 
     def get(self, request, *args, **kwargs):
         return render(request, self.template_name, {'form': self.form_class()})

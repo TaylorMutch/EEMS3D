@@ -1,5 +1,7 @@
 .idea/
 explorer/__pycache__/
 EEMS3D/__pycache__/
-explorer/migrations/
+explorer/migrations/*
 media/
+media - Copy/
+media_old/

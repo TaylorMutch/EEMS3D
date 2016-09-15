@@ -167,12 +167,14 @@ $(document).ready(function() {
                 moderateHighColor: {type: "c", value: moderateHighColor},
                 highColor: {type: "c", value: highColor},
                 veryHighColor: {type: "c", value: veryHighColor},
-                noDataColor: {type: "c", value: noDataColor}
+                noDataColor: {type: "c", value: noDataColor},
+                verticalScale: {type: "f", value: 1}
             },
             vertexShader: [
                 "uniform float minimum;",
                 "uniform float maximum;",
                 "uniform float fillValue;",
+                "uniform float verticalScale;",
                 "uniform int is_fuzzy;",
                 "",
                 "//colors for normal color ramp",
@@ -200,7 +202,7 @@ $(document).ready(function() {
                 "varying vec3 vViewPosition;",
                 "",
                 "void main() {",
-                "   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+                "   gl_Position = projectionMatrix * modelViewMatrix * vec4(position.x, position.y, position.z*verticalScale, 1.0);",
                 "   vNormal = normalize(normalMatrix * normal);",   // hacking a pointlight
                 "   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);",
                 "   vViewPosition = -mvPosition.xyz;",
@@ -359,7 +361,22 @@ $(document).ready(function() {
 
         scene.add(tile_group);
         Animate();
+
+        // Add a simple gui for adjusting the vertical height
+        var verticalScale = {'verticalScale':material.uniforms.verticalScale.value};
+        var gui = new dat.GUI({autoPlace: false});
+        var terrainControls = gui.addFolder('Terrain Controls', "a");
+        terrainControls.add(verticalScale, 'verticalScale',0.0, 10.0).onChange( function(){
+            material.uniforms.verticalScale.value = verticalScale.verticalScale;
+        });
+        terrainControls.open();
+        gui.domElement.style.position='absolute';
+        gui.domElement.style.bottom = '20px';
+        gui.domElement.style.right = '0%';
+        gui.domElement.style.textAlign = 'center';
+        container.appendChild(gui.domElement);
     }
+
 
     /* Update the tiles in the scene */
     function UpdateTiles(variable_name) {
