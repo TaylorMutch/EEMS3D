@@ -266,7 +266,11 @@ $(document).ready(function() {
                 fill_value = Number(response.fill_value);
                 var width = response.x;
                 var height = response.y;
-                var geometry = new THREE.PlaneBufferGeometry(THREE_TILE_SIZE[0], THREE_TILE_SIZE[1],
+                var object_width = Math.floor(THREE_TILE_SIZE[0] * (width / EEMS_TILE_SIZE[0]));
+                var object_height = Math.floor(THREE_TILE_SIZE[1] * (height / EEMS_TILE_SIZE[1]));
+                var x_object_offset = object_width / 2 - THREE_TILE_SIZE[0]/2;
+                var y_object_offset = object_height / 2 - THREE_TILE_SIZE[1]/2;
+                var geometry = new THREE.PlaneBufferGeometry(object_width, object_height,
                     width - 1, height - 1);
                 // add initial variable attribute and fill it with dummy data
                 var dummyVar = new Float32Array(width * height);
@@ -329,12 +333,12 @@ $(document).ready(function() {
                 }
                 geometry.computeVertexNormals();
                 geometry.translate(world_x_offset, world_y_offset, 0);
-                geometry.translate(x_offset, y_offset, 0);
+                geometry.translate(x_offset + x_object_offset, y_offset - y_object_offset, 0);
                 var tile = new THREE.Mesh(geometry, material);
                 tile.userData = {x: x * EEMS_TILE_SIZE[0], y: y * EEMS_TILE_SIZE[1]};
                 tile_group.add(tile);
                 numRequestsSent--;
-                if (numRequestsSent ==0 ) {
+                if (numRequestsSent == 0) {
                     waitingDialog.hide();
                 }
             });

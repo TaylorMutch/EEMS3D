@@ -1,5 +1,4 @@
 import numpy as np
-from django.core.urlresolvers import reverse_lazy
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
 from django.views.generic import View
@@ -45,14 +44,16 @@ class DataInfoView(View):
         ds = None
         if layer == 'elev' and dataset.has_elev_file:
             ds = nc(dataset.elev_file.path, 'r')
+            print('has elevation')
         else:
             ds = nc(dataset.data_file.path, 'r')
+            print('no elevation')
         var = ds.variables[layer][:]
 
         minimum = float(var.min())
         maximum = float(var.max())
-        x = var.shape[0]
-        y = var.shape[1]
+        x = var.shape[1]
+        y = var.shape[0]
         fill_value = str(ds.variables[layer]._FillValue)
         response[layer] = {'min': minimum, 'max': maximum, 'x':float(x), 'y':float(y), 'fill_value' : fill_value}
         ds.close()
@@ -62,10 +63,10 @@ class DataInfoView(View):
 class GetTileView(View):
 
     def get(self, request, *args, **kwargs):
-        x_start = int(kwargs['x'])
-        x_end = x_start + EEMS_TILE_SIZE[0]
         y_start = int(kwargs['y'])
-        y_end = y_start + EEMS_TILE_SIZE[1]
+        y_end = y_start + EEMS_TILE_SIZE[0]
+        x_start = int(kwargs['x'])
+        x_end = x_start + EEMS_TILE_SIZE[1]
         layer = kwargs['layer']
         dataset = Dataset.objects.get(pk=kwargs['dataset'])
         response = dict()
@@ -89,22 +90,22 @@ class GetTileView(View):
             ds = nc(dataset.data_file.path, 'r')
         var = ds.variables[layer][:]
 
-        if x_start > var.shape[0] or y_start > var.shape[1]:
+        if x_start > var.shape[1] or y_start > var.shape[0]:
             return JsonResponse({layer: 'False'})
 
-        x_end = var.shape[0] if x_end > var.shape[0] else x_end
-        y_end = var.shape[1] if y_end > var.shape[1] else y_end
+        x_end = var.shape[1] if x_end > var.shape[1] else x_end
+        y_end = var.shape[0] if y_end > var.shape[0] else y_end
         response['fill_value'] = str(ds.variables[layer]._FillValue)
         if isinstance(var, np.ma.core.MaskedArray):
             sub_matrix = var.data[y_start:y_end, x_start:x_end]
             response[layer] = sub_matrix.ravel().tolist()
-            response['x'] = sub_matrix.shape[0]
-            response['y'] = sub_matrix.shape[1]
+            response['x'] = sub_matrix.shape[1]
+            response['y'] = sub_matrix.shape[0]
         else:
             sub_matrix = var[y_start:y_end, x_start:x_end]
             response[layer] = sub_matrix.ravel().tolist()
-            response['x'] = sub_matrix.shape[0]
-            response['y'] = sub_matrix.shape[1]
+            response['x'] = sub_matrix.shape[1]
+            response['y'] = sub_matrix.shape[0]
 
         ds.close()
         return JsonResponse(response)
@@ -123,7 +124,7 @@ class GetEEMSProgramView(View):
 class DatasetUploadFormView(View):
     form_class = DatasetForm
     template_name = 'upload.html'
-    success_url = reverse_lazy('explore')   # TODO - fix this redirect on file uploads
+    #success_url = reverse_lazy('explore')   # TODO - fix this redirect on file uploads
 
     def get(self, request, *args, **kwargs):
         return render(request, self.template_name, {'form': self.form_class()})
@@ -155,8 +156,7 @@ class DatasetUploadFormView(View):
             elev_variable = Variable(name='elev', dataset=ds, x_dimension=elev_shape[0], y_dimension=elev_shape[1])
             elev_variable.save()
             elev_data.close()
-
-            return redirect(self.success_url)
+            return redirect('/explore/' + str(ds.id) + '/')
         else:
             return render(request, self.template_name, {'form': self.form_class()})
 

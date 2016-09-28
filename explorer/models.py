@@ -13,7 +13,7 @@ class Dataset(models.Model):
     name = models.CharField(max_length=140)
     uuid = models.CharField(max_length=36, default=uuid.uuid4)
     data_file = models.FileField(upload_to='uploads/attributes/', max_length=256)
-    has_elev_file = models.BooleanField(default=False)  # TODO - set to false in later iterations
+    has_elev_file = models.BooleanField(default=True)
     elev_file = models.FileField(upload_to='uploads/elevation/', max_length=256)
     eems_program = models.FileField(upload_to='uploads/programs/', max_length=256)
 
