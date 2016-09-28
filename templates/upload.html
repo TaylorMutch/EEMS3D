@@ -11,6 +11,7 @@
             {% endblock title %}
             {% csrf_token %}
             <fieldset>
+                {% comment %}
                 {% for field in form %}
                     <div class="control-group">
                         <label class="control-label">{{ field.label }}</label>
@@ -27,6 +28,33 @@
                         </div>
                     </div>
                 {% endfor %}
+                {% endcomment %}
+                <div class="control-group">
+                        <label class="control-label">Name</label>
+                        <div class="controls">
+                            <input id="id_name" maxlength="140" name="name" type="text">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Data file</label>
+                        <div class="controls">
+                            <input id="id_data_file" name="data_file" type="file">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Eems program</label>
+                        <div class="controls">
+                            <input id="id_eems_program" name="eems_program" type="file">
+                                <p class="help-inline"><small>The EEMS program for the data</small></p>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Elev file</label>
+                        <div class="controls">
+                            <input id="id_elev_file" name="elev_file" type="file">
+                                <p class="help-inline"><small>The file that contains the "elevation" </small></p>
+                        </div>
+                    </div>
             </fieldset>
             <div class="form-actions">
                 <button id="submit-btn" type="submit" class="btn btn-primary btn-block" >Submit</button>
