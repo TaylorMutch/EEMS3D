@@ -44,10 +44,8 @@ class DataInfoView(View):
         ds = None
         if layer == 'elev' and dataset.has_elev_file:
             ds = nc(dataset.elev_file.path, 'r')
-            print('has elevation')
         else:
             ds = nc(dataset.data_file.path, 'r')
-            print('no elevation')
         var = ds.variables[layer][:]
 
         minimum = float(var.min())

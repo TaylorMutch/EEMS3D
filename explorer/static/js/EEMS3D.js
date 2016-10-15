@@ -11,12 +11,11 @@ $(document).ready(function() {
     var material;   // GLOBAL material that all tiles will inherit from
 
     /* global colors */
-    var veryLowColorFz = new THREE.Color("rgb(30,89,0)");
-    var lowColorFz = new THREE.Color("rgb(64,128,21)");
-    var moderateLowColorFz = new THREE.Color("rgb(96,160,45)");
-    var moderateHighColorFz = new THREE.Color("rgb(142,194,120)");
-    var highColorFz = new THREE.Color("rgb(183,219,164)");
-    var veryHighColorFz = new THREE.Color("rgb(255,255,255)");
+    var veryLowColorFz = new THREE.Color("rgb(165,0,40)");
+    var lowColorFz = new THREE.Color("rgb(248,140,82)");
+    var moderateColorFz = new THREE.Color("rgb(255,255,190)");
+    var highColorFz = new THREE.Color("rgb(142,207,103)");
+    var veryHighColorFz = new THREE.Color("rgb(0,104,40)");
     var veryLowColor = new THREE.Color("rgb(205,102,102)");
     var lowColor = new THREE.Color("rgb(245,162,122)");
     var moderateLowColor = new THREE.Color("rgb(252,207,81)");
@@ -24,6 +23,7 @@ $(document).ready(function() {
     var highColor = new THREE.Color("rgb(140,183,164)");
     var veryHighColor = new THREE.Color("rgb(40,146,199)");
     var noDataColor = new THREE.Color("rgb(145,145,145)");
+    var currentVariableName = "";
 
     // setup THREEjs scene
     var container = document.getElementById('scene');
@@ -154,13 +154,8 @@ $(document).ready(function() {
                 minimum: {type: "f", value: -1.0},
                 maximum: {type: "f", value: 1.0},
                 fillValue: {type: "f", value: fill_value},
-                is_fuzzy: {type: "i", value: 1},    // THREEjs/webgl apparently doesn't allow boolean types yet
-                veryLowColorFz: {type: "c", value: veryLowColorFz},
-                lowColorFz: {type: "c", value: lowColorFz},
-                moderateLowColorFz: {type: "c", value: moderateLowColorFz},
-                moderateHighColorFz: {type: "c", value: moderateHighColorFz},
-                highColorFz: {type: "c", value: highColorFz},
-                veryHighColorFz: {type: "c", value: veryHighColorFz},
+                is_fuzzy: {type: "i", value: 1},        // THREEjs/webgl apparently doesn't allow boolean types yet
+                legendOrientation: {type: "i", value: 1},
                 veryLowColor: {type: "c", value: veryLowColor},
                 lowColor: {type: "c", value: lowColor},
                 moderateLowColor: {type: "c", value: moderateLowColor},
@@ -176,6 +171,7 @@ $(document).ready(function() {
                 "uniform float fillValue;",
                 "uniform float verticalScale;",
                 "uniform int is_fuzzy;",
+                "uniform int legendOrientation;",
                 "",
                 "//colors for normal color ramp",
                 "uniform vec3 veryLowColor;",
@@ -186,12 +182,6 @@ $(document).ready(function() {
                 "uniform vec3 veryHighColor;",
                 "",
                 "//colors for fuzzy color ramp",
-                "uniform vec3 veryLowColorFz;",
-                "uniform vec3 lowColorFz;",
-                "uniform vec3 moderateLowColorFz;",
-                "uniform vec3 moderateHighColorFz;",
-                "uniform vec3 highColorFz;",
-                "uniform vec3 veryHighColorFz;",
                 "",
                 "//no data color",
                 "uniform vec3 noDataColor;",
@@ -208,20 +198,18 @@ $(document).ready(function() {
                 "   vViewPosition = -mvPosition.xyz;",
                 "",
                 "if (is_fuzzy > 0) {   // use fuzzy color ramp",
-                "   if (variable_data > 0.75) {",
-                "       active_color = veryHighColorFz;",
-                "   } else if (variable_data > 0.5) {",
-                "       active_color = highColorFz;",
-                "   } else if (variable_data > 0.0) {",
-                "       active_color = moderateHighColorFz;",
-                "   } else if (variable_data > -0.5) {",
-                "       active_color = moderateLowColorFz;",
-                "   } else if (variable_data > -.75){",
-                "       active_color = lowColorFz;",
-                "   } else {",
-                "       active_color = veryLowColorFz;",
+
+                "   float operating_data = variable_data;",
+                "   if (legendOrientation == 1) {",
+                "       operating_data = operating_data * -1.0;",
                 "   }",
-                "   } else {",  // use misc color ramp
+                "   if (operating_data <= 0.0) {",
+                "       active_color = vec3((165.0 + 90.0 * (operating_data + 1.0) * 2.0) / 255.0, operating_data + 1.0, (40.0 + 150.0 * (operating_data +1.0))/255.0);",
+                "   }",
+                "   else {",
+                "       active_color = vec3(1.0 - operating_data * 2.0, (100.0 + 155.0 *(1.0-operating_data)) / 255.0, (40.0 + 150.0 * (1.0-operating_data))/255.0);",
+                "   }",
+                "} else {",  // use misc color ramp
                 "       float domain = maximum - minimum;",
                 "       if (variable_data > (minimum + domain*0.95)) {",
                 "           active_color = veryHighColor;",
@@ -367,11 +355,22 @@ $(document).ready(function() {
         Animate();
 
         // Add a simple gui for adjusting the vertical height
-        var verticalScale = {'verticalScale':material.uniforms.verticalScale.value};
+        var verticalScale = {
+            'verticalScale':material.uniforms.verticalScale.value,
+            'flipLegend': true
+        };
         var gui = new dat.GUI({autoPlace: false});
         var terrainControls = gui.addFolder('Terrain Controls', "a");
         terrainControls.add(verticalScale, 'verticalScale',0.0, 10.0).onChange( function(){
             material.uniforms.verticalScale.value = verticalScale.verticalScale;
+        });
+        terrainControls.add(verticalScale, 'flipLegend', 1.0).onChange( function() {
+            if (material.uniforms.legendOrientation.value == 1) {
+                material.uniforms.legendOrientation.value = 0;
+            } else {
+                material.uniforms.legendOrientation.value = 1;
+            }
+            RedrawLegend(currentVariableName);
         });
         terrainControls.open();
         gui.domElement.style.position='absolute';
@@ -418,14 +417,18 @@ $(document).ready(function() {
         legendContainer.append('<div class="panel-heading">' + variable_name + '</div>');
         legendContainer.append('<div class="panel-body"></div>');
         var colors;
-        var colorstrings = ["Very Low", "Low", "Moderate-Low", "Moderate-High", "High", "Very High"];
-
+        var colorstrings;
         if (variableNode.is_fuzzy) {
             // draw fuzzy color
-            colors = [veryLowColorFz, lowColorFz, moderateLowColorFz, moderateHighColorFz, highColorFz, veryHighColorFz];
+            colors = [veryLowColorFz, lowColorFz, moderateColorFz, highColorFz, veryHighColorFz];
+            colorstrings = ["-1", "-0.5", "0.0", "0.5", "1.0"].reverse();
+            if (material.uniforms.legendOrientation.value == 0) {
+                colors.reverse();
+            }
         } else {
             // draw other color legend
             colors = [veryLowColor, lowColor, moderateLowColor, moderateHighColor, highColor, veryHighColor];
+            colorstrings = ["Very Low", "Low", "Moderate-Low", "Moderate-High", "High", "Very High"];
         }
         colors.push(noDataColor);
         colorstrings.push("No Data");
@@ -461,6 +464,7 @@ $(document).ready(function() {
                 }
                 UpdateTiles(variableName);
                 RedrawLegend(variableName);
+                currentVariableName = variableName;
             }
         );
     }

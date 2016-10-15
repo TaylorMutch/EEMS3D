@@ -2,6 +2,7 @@ uniform float minimum;
 uniform float maximum;
 uniform float fillValue;
 uniform int is_fuzzy;
+uniform int legendOrientation;
 
 //colors for normal color ramp
 uniform vec3 veryLowColor;
@@ -12,12 +13,14 @@ uniform vec3 highColor;
 uniform vec3 veryHighColor;
 
 //colors for fuzzy color ramp
+/*
 uniform vec3 veryLowColorFz;
 uniform vec3 lowColorFz;
 uniform vec3 moderateLowColorFz;
 uniform vec3 moderateHighColorFz;
 uniform vec3 highColorFz;
 uniform vec3 veryHighColorFz;
+*/
 
 //no data color
 uniform vec3 noDataColor;
@@ -34,6 +37,7 @@ void main() {
     vViewPosition = -mvPosition.xyz;
 
     if (is_fuzzy > 0) {   // use fuzzy color ramp
+        /*
         if (variable_data > 0.75) {
             active_color = veryHighColorFz;
         } else if (variable_data > 0.5) {
@@ -46,6 +50,20 @@ void main() {
             active_color = lowColorFz;
         } else {
             active_color = veryLowColorFz;
+        }*/
+
+        // value that fuzzy logic is decided on. Flippable with legend orientation
+        float operating_data = variable_data;
+
+        if (legendOrientation == 1) {
+            operating_data = operating_data * -1.0;
+        }
+
+        if (operating_data <= 0.0) {
+            active_color = vec3((165.0 + 90.0 * (operating_data + 1.0) * 2.0) / 255.0, operating_data + 1.0, (40.0 + 150.0 * (operating_data +1.0))/255.0);
+        }
+        else {
+            active_color = vec3(1.0 - operating_data * 2.0, (100.0 + 155.0 *(1.0-operating_data)) / 255.0, (40.0 + 150.0 * (1.0-operating_data))/255.0);
         }
     } else {  // use misc color ramp
         float domain = maximum - minimum;
