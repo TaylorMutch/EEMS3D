@@ -21,6 +21,7 @@ from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 urlpatterns = [
     url(r'^admin/', admin.site.urls),
     url(r'^explore/', include('explorer.urls')),
+    url(r'^focalsites/', include('explorer.focalurls')),
 ]
 
 if settings.DEBUG:
