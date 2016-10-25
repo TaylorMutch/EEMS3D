@@ -73,7 +73,8 @@ THREE.OrbitControls = function ( object, domElement ) {
 	this.keys = { LEFT: 37, UP: 38, RIGHT: 39, BOTTOM: 40 };
 
 	// Mouse buttons
-	this.mouseButtons = { ORBIT: THREE.MOUSE.LEFT, ZOOM: THREE.MOUSE.MIDDLE, PAN: THREE.MOUSE.RIGHT };
+	//this.mouseButtons = { ORBIT: THREE.MOUSE.LEFT, ZOOM: THREE.MOUSE.MIDDLE, PAN: THREE.MOUSE.RIGHT };
+	this.mouseButtons = { ORBIT: THREE.MOUSE.RIGHT, ZOOM: THREE.MOUSE.MIDDLE, PAN: THREE.MOUSE.LEFT };
 
 	// for reset
 	this.target0 = this.target.clone();
@@ -133,12 +134,7 @@ THREE.OrbitControls = function ( object, domElement ) {
 			offset.applyQuaternion( quat );
 
 			// angle from z-axis around y-axis
-
-			theta = Math.atan2( offset.x, offset.z );
-
-			// angle from y-axis
-
-			phi = Math.atan2( Math.sqrt( offset.x * offset.x + offset.z * offset.z ), offset.y );
+			spherical.setFromVector3( offset );
 
 			if ( scope.autoRotate && state === STATE.NONE ) {
 
@@ -146,29 +142,27 @@ THREE.OrbitControls = function ( object, domElement ) {
 
 			}
 
-			theta += thetaDelta;
-			phi += phiDelta;
+			spherical.theta += sphericalDelta.theta;
+			spherical.phi += sphericalDelta.phi;
 
 			// restrict theta to be between desired limits
-			theta = Math.max( scope.minAzimuthAngle, Math.min( scope.maxAzimuthAngle, theta ) );
+			spherical.theta = Math.max( scope.minAzimuthAngle, Math.min( scope.maxAzimuthAngle, spherical.theta ) );
 
 			// restrict phi to be between desired limits
-			phi = Math.max( scope.minPolarAngle, Math.min( scope.maxPolarAngle, phi ) );
+			spherical.phi = Math.max( scope.minPolarAngle, Math.min( scope.maxPolarAngle, spherical.phi ) );
 
-			// restrict phi to be betwee EPS and PI-EPS
-			phi = Math.max( EPS, Math.min( Math.PI - EPS, phi ) );
+			spherical.makeSafe();
 
-			var radius = offset.length() * scale;
+
+			spherical.radius *= scale;
 
 			// restrict radius to be between desired limits
-			radius = Math.max( scope.minDistance, Math.min( scope.maxDistance, radius ) );
+			spherical.radius = Math.max( scope.minDistance, Math.min( scope.maxDistance, spherical.radius ) );
 
 			// move target to panned location
 			scope.target.add( panOffset );
 
-			offset.x = radius * Math.sin( phi ) * Math.sin( theta );
-			offset.y = radius * Math.cos( phi );
-			offset.z = radius * Math.sin( phi ) * Math.cos( theta );
+			offset.setFromSpherical( spherical );
 
 			// rotate offset back to "camera-up-vector-is-up" space
 			offset.applyQuaternion( quatInverse );
@@ -179,13 +173,12 @@ THREE.OrbitControls = function ( object, domElement ) {
 
 			if ( scope.enableDamping === true ) {
 
-				thetaDelta *= ( 1 - scope.dampingFactor );
-				phiDelta *= ( 1 - scope.dampingFactor );
+				sphericalDelta.theta *= ( 1 - scope.dampingFactor );
+				sphericalDelta.phi *= ( 1 - scope.dampingFactor );
 
 			} else {
 
-				thetaDelta = 0;
-				phiDelta = 0;
+				sphericalDelta.set( 0, 0, 0 );
 
 			}
 
@@ -254,11 +247,9 @@ THREE.OrbitControls = function ( object, domElement ) {
 	var EPS = 0.000001;
 
 	// current position in spherical coordinates
-	var theta;
-	var phi;
+	var spherical = new THREE.Spherical();
+	var sphericalDelta = new THREE.Spherical();
 
-	var phiDelta = 0;
-	var thetaDelta = 0;
 	var scale = 1;
 	var panOffset = new THREE.Vector3();
 	var zoomChanged = false;
@@ -289,27 +280,23 @@ THREE.OrbitControls = function ( object, domElement ) {
 
 	function rotateLeft( angle ) {
 
-		thetaDelta -= angle;
+		sphericalDelta.theta -= angle;
 
 	}
 
 	function rotateUp( angle ) {
 
-		phiDelta -= angle;
+		sphericalDelta.phi -= angle;
 
 	}
-
+	/*
 	var panLeft = function() {
 
 		var v = new THREE.Vector3();
 
 		return function panLeft( distance, objectMatrix ) {
 
-			var te = objectMatrix.elements;
-
-			// get X column of objectMatrix
-			v.set( te[ 0 ], te[ 1 ], te[ 2 ] );
-
+			v.setFromMatrixColumn( objectMatrix, 0 ); // get X column of objectMatrix
 			v.multiplyScalar( - distance );
 
 			panOffset.add( v );
@@ -318,17 +305,14 @@ THREE.OrbitControls = function ( object, domElement ) {
 
 	}();
 
+
 	var panUp = function() {
 
 		var v = new THREE.Vector3();
 
 		return function panUp( distance, objectMatrix ) {
 
-			var te = objectMatrix.elements;
-
-			// get Y column of objectMatrix
-			v.set( te[ 4 ], te[ 5 ], te[ 6 ] );
-
+			v.setFromMatrixColumn( objectMatrix, 1 ); // get Y column of objectMatrix
 			v.multiplyScalar( distance );
 
 			panOffset.add( v );
@@ -336,6 +320,45 @@ THREE.OrbitControls = function ( object, domElement ) {
 		};
 
 	}();
+	*/
+
+	var panLeft = function() {
+
+    var v = new THREE.Vector3();
+
+    return function panLeft( distance, objectMatrix ) {
+
+        var te = objectMatrix.elements;
+
+        // get elements from the X-column of matrix
+        //v.set( te[ 0 ], 0, te[ 2 ] ).normalize();
+        v.set(te [0], te[1], 0).normalize();
+		v.multiplyScalar( - distance );
+
+        panOffset.add( v );
+
+    };
+
+}();
+
+var panUp = function() {
+
+    var v = new THREE.Vector3();
+
+    return function panUp( distance, objectMatrix ) {
+
+        var te = objectMatrix.elements;
+
+        // get elements from the Z-column of matrix
+        //v.set( te[ 8 ], 0, te[ 10 ] ).normalize();
+        v.set( te[8], te[9], 0).normalize();
+		v.multiplyScalar( - distance );
+
+        panOffset.add( v );
+
+    };
+
+}();
 
 	// deltaX and deltaY are in pixels; right and down are positive
 	var pan = function() {
@@ -357,14 +380,16 @@ THREE.OrbitControls = function ( object, domElement ) {
 				targetDistance *= Math.tan( ( scope.object.fov / 2 ) * Math.PI / 180.0 );
 
 				// we actually don't use screenWidth, since perspective camera is fixed to screen height
-				panLeft( 2 * deltaX * targetDistance / element.clientHeight, scope.object.matrix );
-				panUp( 2 * deltaY * targetDistance / element.clientHeight, scope.object.matrix );
+				//panLeft( 2 * deltaX * targetDistance / element.clientHeight, scope.object.matrix );
+				//panUp( 2 * deltaY * targetDistance / element.clientHeight, scope.object.matrix );
+				panLeft( deltaX * targetDistance / element.clientHeight, scope.object.matrix );
+				panUp( deltaY * targetDistance / element.clientHeight, scope.object.matrix );
 
 			} else if ( scope.object instanceof THREE.OrthographicCamera ) {
 
 				// orthographic
-				panLeft( deltaX * ( scope.object.right - scope.object.left ) / element.clientWidth, scope.object.matrix );
-				panUp( deltaY * ( scope.object.top - scope.object.bottom ) / element.clientHeight, scope.object.matrix );
+				panLeft( deltaX * ( scope.object.right - scope.object.left ) / scope.object.zoom / element.clientWidth, scope.object.matrix );
+				panUp( deltaY * ( scope.object.top - scope.object.bottom ) / scope.object.zoom / element.clientHeight, scope.object.matrix );
 
 			} else {
 
@@ -458,10 +483,18 @@ THREE.OrbitControls = function ( object, domElement ) {
 		var element = scope.domElement === document ? scope.domElement.body : scope.domElement;
 
 		// rotating across whole screen goes 360 degrees around
+		rotateLeft( Math.PI * rotateDelta.x / element.clientWidth * scope.rotateSpeed );
+
+		// rotating up and down along whole screen attempts to go 360, but limited to 180
+		rotateUp( Math.PI * rotateDelta.y / element.clientHeight * scope.rotateSpeed );
+
+		/*
+		// rotating across whole screen goes 360 degrees around
 		rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientWidth * scope.rotateSpeed );
 
 		// rotating up and down along whole screen attempts to go 360, but limited to 180
 		rotateUp( 2 * Math.PI * rotateDelta.y / element.clientHeight * scope.rotateSpeed );
+		*/
 
 		rotateStart.copy( rotateEnd );
 
