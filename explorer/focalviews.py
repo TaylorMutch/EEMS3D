@@ -67,7 +67,6 @@ class ElevInfoView(View):
     def get(self, request, *args, **kwargs):
 
         layer = 'elev'
-        print('Got the request!')
         elev_path = os.path.join(settings.MEDIA_ROOT, 'uploads', 'elevation', 'Elev_30AS_ForTaylor.nc')
 
         with nc(elev_path, 'r') as ds:

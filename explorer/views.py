@@ -41,20 +41,22 @@ class DataInfoView(View):
         if not found:
             return JsonResponse({layer: 'False'})
 
-        ds = None
         if layer == 'elev' and dataset.has_elev_file:
-            ds = nc(dataset.elev_file.path, 'r')
+            path = dataset.elev_file.path
         else:
-            ds = nc(dataset.data_file.path, 'r')
-        var = ds.variables[layer][:]
+            path = dataset.data_file.path
 
-        minimum = float(var.min())
-        maximum = float(var.max())
-        x = var.shape[1]
-        y = var.shape[0]
-        fill_value = str(ds.variables[layer]._FillValue)
-        response[layer] = {'min': minimum, 'max': maximum, 'x':float(x), 'y':float(y), 'fill_value' : fill_value}
-        ds.close()
+        with nc(path, 'r') as ds:
+
+            var = ds.variables[layer][:]
+
+            minimum = float(var.min())
+            maximum = float(var.max())
+            x = var.shape[1]
+            y = var.shape[0]
+            fill_value = str(ds.variables[layer]._FillValue)
+            response[layer] = {'min': minimum, 'max': maximum, 'x':float(x), 'y':float(y), 'fill_value' : fill_value}
+
         return JsonResponse(response)
 
 
@@ -81,31 +83,31 @@ class GetTileView(View):
         if not found:
             return JsonResponse({layer : 'False'})
 
-        ds = None
         if layer == 'elev' and dataset.has_elev_file:
-            ds = nc(dataset.elev_file.path, 'r')
+            path = dataset.elev_file.path
         else:
-            ds = nc(dataset.data_file.path, 'r')
-        var = ds.variables[layer][:]
+            path = dataset.data_file.path
 
-        if x_start > var.shape[1] or y_start > var.shape[0]:
-            return JsonResponse({layer: 'False'})
+        with nc(path, 'r') as ds:
+            var = ds.variables[layer][:]
 
-        x_end = var.shape[1] if x_end > var.shape[1] else x_end
-        y_end = var.shape[0] if y_end > var.shape[0] else y_end
-        response['fill_value'] = str(ds.variables[layer]._FillValue)
-        if isinstance(var, np.ma.core.MaskedArray):
-            sub_matrix = var.data[y_start:y_end, x_start:x_end]
-            response[layer] = sub_matrix.ravel().tolist()
-            response['x'] = sub_matrix.shape[1]
-            response['y'] = sub_matrix.shape[0]
-        else:
-            sub_matrix = var[y_start:y_end, x_start:x_end]
-            response[layer] = sub_matrix.ravel().tolist()
-            response['x'] = sub_matrix.shape[1]
-            response['y'] = sub_matrix.shape[0]
+            if x_start > var.shape[1] or y_start > var.shape[0]:
+                return JsonResponse({layer: 'False'})
 
-        ds.close()
+            x_end = var.shape[1] if x_end > var.shape[1] else x_end
+            y_end = var.shape[0] if y_end > var.shape[0] else y_end
+            response['fill_value'] = str(ds.variables[layer]._FillValue)
+            if isinstance(var, np.ma.core.MaskedArray):
+                sub_matrix = var.data[y_start:y_end, x_start:x_end]
+                response[layer] = sub_matrix.ravel().tolist()
+                response['x'] = sub_matrix.shape[1]
+                response['y'] = sub_matrix.shape[0]
+            else:
+                sub_matrix = var[y_start:y_end, x_start:x_end]
+                response[layer] = sub_matrix.ravel().tolist()
+                response['x'] = sub_matrix.shape[1]
+                response['y'] = sub_matrix.shape[0]
+
         return JsonResponse(response)
 
 
