@@ -24,6 +24,10 @@
     <script>
         var focal_sites = {{ focal_points | safe }};
     </script>
+
+    {% include 'modals/focalviews_about.html' %}
+
+
       <nav class="navbar navbar-inverse navbar-fixed-top">
           <div class="container-fluid">
               <div class="navbar-header">
@@ -34,6 +38,10 @@
                   </button>
                   <a href="#" class="navbar-brand">Sagebrush Focal Points</a>
               </div>
+              <ul class="nav navbar-nav">
+                    <li><a href="#" data-toggle="modal" data-target="#myModal">How-To</a></li>
+
+                </ul>
           </div>
       </nav>
 

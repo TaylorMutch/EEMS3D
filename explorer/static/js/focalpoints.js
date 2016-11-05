@@ -2,12 +2,13 @@
  * Created by taylo on 10/16/2016.
  */
 
+var res = 400;
 
 var EEMS_TILE_SIZE = [500,500];
-var THREE_TILE_SIZE = [800 * 100, 800 * 100];
+var THREE_TILE_SIZE = [res * 100, res * 100];
 var x_tiles, y_tiles, dimensions, fill_value;
 var material;   // GLOBAL material that all tiles will inherit from
-var scene, sites, renderer, camera, raycaster;
+var scene, sites, hiddenSites, renderer, camera, raycaster;
 var world_width, world_height, world_x_offset, world_y_offset;
 var clearDepth = true;  // determine whether to allow the labels to be hidden
 var currentLayerName = 'tmin';
@@ -16,8 +17,9 @@ var currentVariableName = "";
 var mouse;
 var currentSiteSelected;  // = null;
 
-var        INTERSECTED = null;
-var        INTERSECTED_STATIC = null;
+var INTERSECTED = null;
+var INTERSECTED_STATIC = null;
+var INTERSECTED_HIDDEN = null;
 
 $(document).ready(function() {
     /* global EEMS variables */
@@ -38,7 +40,8 @@ $(document).ready(function() {
     var container = document.getElementById('scene');
     scene = new THREE.Scene();
     sites = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 10000000);
+    hiddenSites = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 100000);
     raycaster = new THREE.Raycaster();
     mouse = new THREE.Vector2();
     renderer = new THREE.WebGLRenderer();
@@ -52,6 +55,9 @@ $(document).ready(function() {
     var initialCameraLookAt = new THREE.Vector3(0,0,0);
     camera.lookAt(initialCameraLookAt);
     var orbit = new THREE.OrbitControls(camera, renderer.domElement);
+	orbit.zoomSpeed = 0.5;
+	orbit.minDistance = 5000;
+    orbit.maxDistance = 80000;
 
     // our single render pass
     var Render = function () {
@@ -60,6 +66,8 @@ $(document).ready(function() {
         renderer.render(scene, camera);
         if (clearDepth) renderer.clearDepth();
         renderer.render(sites, camera);
+        if (clearDepth) renderer.clearDepth();
+        renderer.render(hiddenSites, camera);
     };
 
     // our animation loop
@@ -363,12 +371,13 @@ $(document).ready(function() {
 
         // Add a simple gui for adjusting the vertical height
         var verticalScale = {
-            'verticalScale':material.uniforms.verticalScale.value,
-            'Clear Depth':clearDepth
+            'Vertical Scale':material.uniforms.verticalScale.value,
+            'Clear Depth':clearDepth,
+            'Min Zoom Distance':orbit.minDistance
         };
         var gui = new dat.GUI({autoPlace: false});
         var terrainControls = gui.addFolder('Terrain Controls', "a");
-        terrainControls.add(verticalScale, 'verticalScale',0.0, 3.0).onChange( function(){
+        terrainControls.add(verticalScale, 'Vertical Scale',0.0, 3.0).onChange( function(){
             material.uniforms.verticalScale.value = verticalScale.verticalScale;
 
             // update the sprite positions as well
@@ -377,7 +386,9 @@ $(document).ready(function() {
         terrainControls.add(verticalScale, 'Clear Depth', false).onChange( function(value) {
             clearDepth = value;
         });
-        terrainControls.open();
+        terrainControls.add(verticalScale, 'Min Zoom Distance', 1000, 10000).onChange(function(value) {
+            orbit.minDistance = value;
+        });
         gui.domElement.style.position='absolute';
         gui.domElement.style.bottom = '20px';
         gui.domElement.style.right = '0%';
@@ -434,8 +445,20 @@ $(document).ready(function() {
                 { // parameters
                     fontsize: 18,
                     fontface: "Georgia",
-                    //borderColor: {r: 0, g: 0, b: 255, a: 1.0},
-                    //borderColor: color,
+                    borderThickness: 4,
+                    textColor: {r: 255, g: 255, b: 255, a: 1.0},
+                    fillColor: color,
+                    radius: 0,
+                    vAlign: "bottom",
+                    hAlign: "center"
+                }
+            );
+
+            var hidden_sprite = makeTextSprite(message, x, y, z,
+                { // parameters
+                    fontsize: 18,
+                    fontface: "Georgia",
+                    borderColor: {r: 255, g: 255, b: 255, a: 1.0},
                     borderThickness: 4,
                     textColor: {r: 255, g: 255, b: 255, a: 1.0},
                     fillColor: color,
@@ -446,9 +469,25 @@ $(document).ready(function() {
             );
 
             // link sprite to elevation
-            sprite.userData = {orig_z: z, site: focal_point.site, tmin: focal_point['tmin'], tmax: focal_point['tmax']};
+            sprite.userData = {
+                //sprite_id: i,
+                orig_z: z,
+                site: focal_point.site,
+                tmin: focal_point['tmin'],
+                tmax: focal_point['tmax'],
+                confidence: focal_point.confidence,
+                consensus: focal_point.consensus
+            };
             sprite.name = String(focal_point.site);
+
+            hidden_sprite.userData = {
+                site: focal_point.site
+            };
+            hidden_sprite.name = String(focal_point.site);
+            hidden_sprite.visible = false;
+
             sites.add(sprite);
+            hiddenSites.add(hidden_sprite);
         }
     }
 
@@ -510,9 +549,6 @@ $(document).ready(function() {
         var data = focal_site.userData;
         log.append('<table>');
         for (var i = 0; i < availableLayers.length; i++) {
-
-
-
             var layer = availableLayers[i];
             var first_attr = true;
             for (var attr in data[layer]) {
@@ -521,14 +557,32 @@ $(document).ready(function() {
                 first_attr = false;
             }
         }
+
+        var textColor;
+        switch (data.consensus) {
+            case 'increase':
+                textColor = 'blue';
+                break;
+            case 'decrease':
+                textColor = 'red';
+                break;
+            case 'unsure':
+                textColor = 'yellow';
+                break;
+        }
+
         log.append('</table>');
+        log.prepend('<h3 class="confidence" style="text-align:center; color: ' + textColor + '">' +
+                    'Confidence = ' + data.confidence + ' Consensus = ' + data.consensus +
+                    '</h3>');
         log.prepend('<h3 style="text-align:center;"><a> Site ' + data.site + '</a></h3>');
         log.show();
     }
 
     function onDocumentMouseDown() {
         raycaster.setFromCamera(mouse, camera);
-        var intersects = raycaster.intersectObjects(sites.children, true);
+        //var intersects = raycaster.intersectObjects(sites.children, true);
+        var intersects = raycaster.intersectObjects(hiddenSites.children, false);
         if (intersects.length > 0) {
             if (INTERSECTED != intersects[0].object) {
                 INTERSECTED = intersects[0].object;
@@ -540,32 +594,71 @@ $(document).ready(function() {
         }
     }
 
+
+    function clear() {
+
+        for (var i = 0; i < hiddenSites.children.length; i++) {
+            if (hiddenSites.children[i] != INTERSECTED_HIDDEN) {
+                hiddenSites.children[i].visible = false;
+            }
+        }
+
+        for (var i = 0; i < sites.children.length; i++) {
+            if (sites.children[i] != INTERSECTED_STATIC) {
+                sites.children[i].visible = true;
+            }
+        }
+
+    }
+
+    setInterval(clear, 50);
+
     function onDocumentMouseMove(event) {
         mouse.x = (event.clientX / renderer.domElement.width) * 2 - 1;
         mouse.y = (-(event.clientY - 50) / renderer.domElement.height) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
         var intersects = raycaster.intersectObjects(sites.children, true);
+        //var hidden_intersects = raycaster.intersectObjects(hiddenSites.children, false);
+        //if (intersects.length > 0 || hidden_intersects > 0) {
+        var hidden_intersects = raycaster.intersectObjects(hiddenSites.children, false);
         if (intersects.length > 0) {
+
 
             // Pick the closest object
             if (INTERSECTED_STATIC != intersects[0].object) {
-                if (INTERSECTED_STATIC) { //If we already have one, reset the previous to its former state
-                    //INTERSECTED_STATIC.material.emissive.setHex(INTERSECTED_STATIC.currentHex);
-                }
+                //if (INTERSECTED_STATIC != null) { //If we already have one, reset the previous to its former state
+                //    INTERSECTED_STATIC.visible = true;
+                //
+                //}
 
                 // Get the new object and highlight it
                 INTERSECTED_STATIC = intersects[0].object;
-                //INTERSECTED_STATIC.currentHex = INTERSECTED_STATIC.material.emissive.getHex();
-                //INTERSECTED_STATIC.material.emissive.setHex(0xffffff);
+                INTERSECTED_STATIC.visible = false;
+
+                INTERSECTED_HIDDEN = hiddenSites.getObjectByName(INTERSECTED_STATIC.name);
+                INTERSECTED_HIDDEN.visible = true;
+
             }
+        }
+        else if (hidden_intersects.length > 0) {
+            // do nothing ?
         }
         else {
             if (INTERSECTED_STATIC) { // If we selected an object, we want to restore its state
-                //INTERSECTED_STATIC.material.emissive.setHex(INTERSECTED_STATIC.currentHex);
+                INTERSECTED_STATIC.visible = true;
             }
+
+            if (INTERSECTED_HIDDEN) {
+                INTERSECTED_HIDDEN.visible = false;
+            }
+
+            /*if (INTERSECTED_HIDDEN) {
+                INTERSECTED_HIDDEN.visible = false;
+            }*/
 
             // Clear the saved objects and wait for next object
             INTERSECTED_STATIC = null;
+            INTERSECTED_HIDDEN = null;
         }
     }
 
