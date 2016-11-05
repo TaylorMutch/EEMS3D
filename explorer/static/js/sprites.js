@@ -97,7 +97,7 @@ function makeTextSprite(message, x,y,z, parameters) {
     // Note also that the size of the scale factors controls the actual size of the text-label
     //sprite.scale.set(4,2,1);
     //sprite.scale.set(6,3,1);
-    sprite.scale.set(500,250,1);
+    sprite.scale.set(500*2,250*2,1);
     // set the sprite's position.  Note that this position is in the CENTER of the sprite
     sprite.position.set(x, y, z);
 

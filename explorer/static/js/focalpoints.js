@@ -7,13 +7,23 @@ var EEMS_TILE_SIZE = [500,500];
 var THREE_TILE_SIZE = [800 * 100, 800 * 100];
 var x_tiles, y_tiles, dimensions, fill_value;
 var material;   // GLOBAL material that all tiles will inherit from
-var scene, renderer, camera;
-var world_width, world_height;
+var scene, sites, renderer, camera, raycaster;
+var world_width, world_height, world_x_offset, world_y_offset;
+var clearDepth = true;  // determine whether to allow the labels to be hidden
+var currentLayerName = 'tmin';
+var currentVariableName = "";
+
+var mouse;
+var currentSiteSelected;  // = null;
+
+var        INTERSECTED = null;
+var        INTERSECTED_STATIC = null;
 
 $(document).ready(function() {
     /* global EEMS variables */
     waitingDialog.show('Loading dataset...');
 
+    $('#explorer').hide();
 
     /* global colors */
     var veryLowColor = new THREE.Color("rgb(205,102,102)");
@@ -27,10 +37,13 @@ $(document).ready(function() {
     // setup THREEjs scene
     var container = document.getElementById('scene');
     scene = new THREE.Scene();
+    sites = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 10000000);
-
+    raycaster = new THREE.Raycaster();
+    mouse = new THREE.Vector2();
     renderer = new THREE.WebGLRenderer();
     renderer.setSize(container.offsetWidth, container.offsetHeight);
+    renderer.autoClear = false;                                     // autoClear false, so clear in the render call
     container.appendChild(renderer.domElement);
     window.addEventListener('resize', onWindowResize, false);
 
@@ -43,7 +56,10 @@ $(document).ready(function() {
     // our single render pass
     var Render = function () {
         orbit.update();
+        renderer.clear();
         renderer.render(scene, camera);
+        if (clearDepth) renderer.clearDepth();
+        renderer.render(sites, camera);
     };
 
     // our animation loop
@@ -62,8 +78,69 @@ $(document).ready(function() {
         camera.updateProjectionMatrix();
     }
 
-    /* get the EEMS program and initialize the explorer GUI */
+    /* Initialize the explorer GUI */
     function Init() {
+
+        google.charts.load('current', {packages: ["orgchart"]});
+        google.charts.setOnLoadCallback(drawChart);
+        function drawChart() {
+            var data = new google.visualization.DataTable();
+            data.addColumn('string', 'Variable');	// pk
+            data.addColumn('string', 'Parent');	// fk to Variable
+            data.addColumn('string', 'layer_name');
+
+            var providers = ['CanESM2', 'CCSM4', 'CNRM-CM5', 'HadGEM2-ES'];
+
+            data.addRow([
+                {
+                    v: 'ensemble_tmin',
+                    f: "Ensemble<div style='color:blue;'>tmin</div>"
+                },
+                '',
+                'tmin'
+            ]);
+
+            data.addRow([
+                {
+                    v: 'ensemble_tmax',
+                    f: "Ensemble<div style='color:blue;'>tmax</div>"
+                },
+                '',
+                'tmax'
+            ]);
+
+            for (var i = 0; i < providers.length; i++) {
+                var name = providers[i];
+                data.addRow([
+                    {
+                        v: name + '_tmin',
+                        f: name + "<div style='color:blue;'>tmin</div>"
+                    },
+                    'ensemble_tmin',
+                    'tmin'
+                ]);
+                data.addRow([
+                    {
+                        v: name + '_tmax',
+                        f: name + "<div style='color:blue;'>tmax</div>"
+                    },
+                    'ensemble_tmax',
+                    'tmax'
+                ]);
+            }
+
+            var chart = new google.visualization.OrgChart(document.getElementById("providers-tree"));
+            chart.draw(data, {allowHtml: true, allowCollapse: true, size: 'small'});
+
+            function selectHandler() {
+                var selection = chart.getSelection();
+                if (selection.length > 0) {
+                    UpdateVariable(data.getValue(selection[0].row, 0), data.getValue(selection[0].row, 2));
+                }
+            }
+
+            google.visualization.events.addListener(chart, 'select', selectHandler);
+        }
 
         // get the dimensions of the elevation attribute
         $.getJSON('dimensions', function(response) {
@@ -72,7 +149,6 @@ $(document).ready(function() {
             y_tiles = Math.ceil(dimensions.y/EEMS_TILE_SIZE[1]);
             fill_value = Number(dimensions.fill_value);
             CreateTiles();
-            CreateFocalPoints();
         });
     }
 
@@ -85,7 +161,7 @@ $(document).ready(function() {
                 minimum: {type: "f", value: -1.0},
                 maximum: {type: "f", value: 1.0},
                 fillValue: {type: "f", value: fill_value},
-                is_fuzzy: {type: "i", value: 1},        // THREEjs/webgl apparently doesn't allow boolean types yet
+                is_fuzzy: {type: "i", value: 0},        // THREEjs/webgl apparently doesn't allow boolean types yet
                 veryLowColor: {type: "c", value: veryLowColor},
                 lowColor: {type: "c", value: lowColor},
                 moderateLowColor: {type: "c", value: moderateLowColor},
@@ -124,7 +200,7 @@ $(document).ready(function() {
                 "void main() {",
                 "   gl_Position = projectionMatrix * modelViewMatrix * vec4(position.x, position.y, position.z*verticalScale, 1.0);",
                 "   vNormal = normalize(normalMatrix * normal);",   // hacking a pointlight
-                "   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);",
+                "   vec4 mvPosition = modelViewMatrix * vec4(position.x, position.y, position.z*verticalScale, 1.0);",
                 "   vViewPosition = -mvPosition.xyz;",
                 "",
                 "if (is_fuzzy > 0) {   // use fuzzy color ramp",
@@ -174,9 +250,12 @@ $(document).ready(function() {
 
         var numRequestsSent = 0;
 
-        function CreateOneTile(tile_group, x,y,x_offset,y_offset,world_x_offset,world_y_offset) {
+        //function CreateOneTile(tile_group, x,y,x_offset,y_offset,world_x_offset,world_y_offset) {
+        function CreateOneTile(tile_group, x,y,x_offset,y_offset) {
             numRequestsSent++;
             $.getJSON('tiles/' + x * EEMS_TILE_SIZE[0] + '/' + y * EEMS_TILE_SIZE[1], function (response) {
+
+
                 var elev_data = response['elev'];
                 fill_value = Number(response.fill_value);
                 var width = response.x;
@@ -189,7 +268,7 @@ $(document).ready(function() {
                     width - 1, height - 1);
                 // add initial variable attribute and fill it with dummy data
                 var dummyVar = new Float32Array(width * height);
-                dummyVar.fill(-0.5);
+                dummyVar.fill(-0.8);
                 var variable_attr = new THREE.BufferAttribute(dummyVar, 1);
                 geometry.addAttribute('variable_data', variable_attr);
 
@@ -248,23 +327,24 @@ $(document).ready(function() {
                 }
                 geometry.computeVertexNormals();
                 geometry.translate(world_x_offset, world_y_offset, 0);
-                geometry.translate(x_offset + x_object_offset, y_offset - y_object_offset, 0);
+                geometry.translate(x_offset, y_offset, 0);
+                geometry.translate(x_object_offset, -y_object_offset, 0);
                 var tile = new THREE.Mesh(geometry, material);
                 tile.userData = {x: x * EEMS_TILE_SIZE[0], y: y * EEMS_TILE_SIZE[1]};
                 tile_group.add(tile);
                 numRequestsSent--;
                 if (numRequestsSent == 0) {
                     waitingDialog.hide();
+                    CreateFocalPoints();
                 }
             });
         }
 
         world_width = x_tiles * THREE_TILE_SIZE[0];
         world_height = y_tiles * THREE_TILE_SIZE[1];
-        var world_x_offset = -1 * world_width / 2 + THREE_TILE_SIZE[0]/ 2;
-        var world_y_offset = world_height / 2 - THREE_TILE_SIZE[1]/2;
+        world_x_offset = -1 * world_width / 2 + THREE_TILE_SIZE[0]/ 2;
+        world_y_offset = world_height / 2 - THREE_TILE_SIZE[1]/2;
         var tile_group = new THREE.Group();
-
 
         var local_x_offset = 0;
         var local_y_offset = 0;
@@ -272,7 +352,7 @@ $(document).ready(function() {
         for (var x = 0; x < x_tiles; x++) {
             local_y_offset = 0;
             for (var y = 0; y < y_tiles; y++) {
-                CreateOneTile(tile_group, x,y,local_x_offset,local_y_offset,world_x_offset,world_y_offset);
+                CreateOneTile(tile_group, x,y,local_x_offset,local_y_offset);
                 local_y_offset -= THREE_TILE_SIZE[1];
             }
             local_x_offset += THREE_TILE_SIZE[0];
@@ -283,12 +363,19 @@ $(document).ready(function() {
 
         // Add a simple gui for adjusting the vertical height
         var verticalScale = {
-            'verticalScale':material.uniforms.verticalScale.value
+            'verticalScale':material.uniforms.verticalScale.value,
+            'Clear Depth':clearDepth
         };
         var gui = new dat.GUI({autoPlace: false});
         var terrainControls = gui.addFolder('Terrain Controls', "a");
-        terrainControls.add(verticalScale, 'verticalScale',0.0, 10.0).onChange( function(){
+        terrainControls.add(verticalScale, 'verticalScale',0.0, 3.0).onChange( function(){
             material.uniforms.verticalScale.value = verticalScale.verticalScale;
+
+            // update the sprite positions as well
+
+        });
+        terrainControls.add(verticalScale, 'Clear Depth', false).onChange( function(value) {
+            clearDepth = value;
         });
         terrainControls.open();
         gui.domElement.style.position='absolute';
@@ -302,31 +389,187 @@ $(document).ready(function() {
     /* Create text sprites for each focal point in the scene */
     function CreateFocalPoints() {
         for (var i = 0; i < focal_sites.length; i++) {
+
             var focal_point = focal_sites[i];
-            var lat = focal_point.latitude;
-            var lon = focal_point.longitude;
+            var lat = focal_point.Lat;
+            var lon = focal_point.Lon;
+
             var x_width = x_tiles * THREE_TILE_SIZE[0];
             var y_width = y_tiles * THREE_TILE_SIZE[1];
 
-            //var y_scale = (dimensions.y - dimensions.y/2) * THREE_TILE_SIZE[1];
-            var x = (lon - dimensions.lon_min) / (dimensions.lon_max - dimensions.lon_min) * x_width - x_width/2;
-            var y = (lat - dimensions.lat_min) / (dimensions.lat_max - dimensions.lat_min) * y_width - y_width/2;
-            console.log(x,y);
-            var message = 'Site ID ' + String(focal_point.site);
-            var sprite =  makeTextSprite(message, x, y, dimensions.max / 2,
+            // ratio of position in lat/long space, (0,1)
+            var rx = (lon - dimensions.lon_min) / (dimensions.lon_max - dimensions.lon_min);
+            var ry = (lat - dimensions.lat_min) / (dimensions.lat_max - dimensions.lat_min);
+
+            // world x,y coords
+            var x = rx * x_width - x_width/2;
+            var y = ry * y_width - y_width/2;
+
+            var color = {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 1.0
+            };
+
+            var confidence = parseInt(Number(focal_point.confidence) / 20 * 255);   // color needs to be an integer
+
+            switch (focal_point.consensus) {
+                case 'increase':
+                    color.b = confidence;
+                    break;
+                case 'decrease':
+                    color.r = confidence;
+                    break;
+
+                case 'unsure':
+                    color.r = confidence;
+                    color.g = confidence;
+                    break;
+            }
+
+            var message = 'Site ' + String(focal_point.site);
+            var z = focal_point.z;
+            var sprite =  makeTextSprite(message, x, y, z,
                 { // parameters
                     fontsize: 18,
                     fontface: "Georgia",
-                    borderColor: {r: 0, g: 0, b: 255, a: 1.0},
+                    //borderColor: {r: 0, g: 0, b: 255, a: 1.0},
+                    //borderColor: color,
                     borderThickness: 4,
-                    fillColor: {r: 255, g: 255, b: 255, a: 1.0},
+                    textColor: {r: 255, g: 255, b: 255, a: 1.0},
+                    fillColor: color,
                     radius: 0,
                     vAlign: "bottom",
                     hAlign: "center"
                 }
             );
-            //sprite.geometry.scale(10,10,10);
-            scene.add(sprite);
+
+            // link sprite to elevation
+            sprite.userData = {orig_z: z, site: focal_point.site, tmin: focal_point['tmin'], tmax: focal_point['tmax']};
+            sprite.name = String(focal_point.site);
+            sites.add(sprite);
         }
     }
+
+        /* Update the tiles in the scene */
+    function UpdateTiles(variable_name, layer_name) {
+        waitingDialog.show('Updating base layer to ' + variable_name + ' - ' + layer_name + '...');
+        var numRequestsSent = 0;
+        function UpdateOneTile(tile, variable_name) {
+            numRequestsSent++;
+            var x = tile.userData.x;
+            var y = tile.userData.y;
+            $.getJSON(variable_name + '/' + layer_name + '/tiles/' + x + '/' + y, function (response) {
+                var attribute_data = new Float32Array(response[variable_name]);
+                var buffer = tile.geometry.getAttribute("variable_data");
+                buffer.array = attribute_data;
+                buffer.needsUpdate = true;
+                numRequestsSent--;
+                if (numRequestsSent == 0) {
+                    waitingDialog.hide();
+                }
+            })
+        }
+
+        var tiles = scene.children[0].children;
+        for (var i = 0; i < tiles.length; i++) {
+            var tile = tiles[i];
+            UpdateOneTile(tile, variable_name);
+        }
+    }
+
+        /* Fetch the new variable info, update scene material, and update the tiles. */
+    function UpdateVariable(variableName, layerName) {
+
+        var actualVariableName = variableName.split('_')[0];
+
+        $.getJSON(actualVariableName + '/' + layerName + '/dimensions/').done(
+            function (response) {
+                dimensions = response;
+                var uniforms = material.uniforms;
+                uniforms.minimum.value = dimensions.min;
+                uniforms.maximum.value = dimensions.max;
+                fill_value = Number(dimensions.fill_value);
+                uniforms.fillValue.value = fill_value;
+                UpdateTiles(actualVariableName, layerName);
+
+
+                //RedrawLegend(variableName);
+                currentVariableName = actualVariableName;
+                currentLayerName = layerName;
+            }
+        );
+    }
+
+    var availableLayers = ['tmin', 'tmax'];
+    function UpdateResults() {
+        var focal_site = sites.getObjectByName(currentSiteSelected);
+        var log = $('#results');
+        log.empty();
+        var data = focal_site.userData;
+        log.append('<table>');
+        for (var i = 0; i < availableLayers.length; i++) {
+
+
+
+            var layer = availableLayers[i];
+            var first_attr = true;
+            for (var attr in data[layer]) {
+                var message = '<tr>' + (first_attr ? '<td>' + layer +' ->  </td>' : '<td></td>') + '<td>' + String(attr) + ': </td><td>' + data[layer][attr] + '</td>';
+                log.append(message);
+                first_attr = false;
+            }
+        }
+        log.append('</table>');
+        log.prepend('<h3 style="text-align:center;"><a> Site ' + data.site + '</a></h3>');
+        log.show();
+    }
+
+    function onDocumentMouseDown() {
+        raycaster.setFromCamera(mouse, camera);
+        var intersects = raycaster.intersectObjects(sites.children, true);
+        if (intersects.length > 0) {
+            if (INTERSECTED != intersects[0].object) {
+                INTERSECTED = intersects[0].object;
+                currentSiteSelected = INTERSECTED.userData.site;
+                UpdateResults();
+            }
+        } else {
+            INTERSECTED = null;
+        }
+    }
+
+    function onDocumentMouseMove(event) {
+        mouse.x = (event.clientX / renderer.domElement.width) * 2 - 1;
+        mouse.y = (-(event.clientY - 50) / renderer.domElement.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        var intersects = raycaster.intersectObjects(sites.children, true);
+        if (intersects.length > 0) {
+
+            // Pick the closest object
+            if (INTERSECTED_STATIC != intersects[0].object) {
+                if (INTERSECTED_STATIC) { //If we already have one, reset the previous to its former state
+                    //INTERSECTED_STATIC.material.emissive.setHex(INTERSECTED_STATIC.currentHex);
+                }
+
+                // Get the new object and highlight it
+                INTERSECTED_STATIC = intersects[0].object;
+                //INTERSECTED_STATIC.currentHex = INTERSECTED_STATIC.material.emissive.getHex();
+                //INTERSECTED_STATIC.material.emissive.setHex(0xffffff);
+            }
+        }
+        else {
+            if (INTERSECTED_STATIC) { // If we selected an object, we want to restore its state
+                //INTERSECTED_STATIC.material.emissive.setHex(INTERSECTED_STATIC.currentHex);
+            }
+
+            // Clear the saved objects and wait for next object
+            INTERSECTED_STATIC = null;
+        }
+    }
+
+    document.addEventListener( 'mousedown', onDocumentMouseDown, false);
+    document.addEventListener( 'mousemove', onDocumentMouseMove, false);
+
 });
