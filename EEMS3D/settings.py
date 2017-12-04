@@ -31,7 +31,6 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
-    'explorer.apps.ExplorerConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -40,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django_extensions',
     'rest_framework',
+    'explorer',
 ]
 
 MIDDLEWARE_CLASSES = [
@@ -95,7 +95,7 @@ REST_FRAMEWORK =  {
 }
 
 STATICFILES_DIRs = [
-    "C:/Users/taylo/PycharmProjects/EEMS3D/static",
+    os.path.join(BASE_DIR, "EEMS3D/static"),
 ]
 
 

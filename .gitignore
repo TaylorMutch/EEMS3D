@@ -5,3 +5,5 @@ explorer/migrations/*
 media/
 media - Copy/
 media_old/
+db.sqlite3
+
