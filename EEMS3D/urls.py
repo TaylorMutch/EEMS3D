@@ -18,7 +18,17 @@ from django.contrib import admin
 from django.conf import settings
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
+from explorer.views import DatasetViewset
+from rest_framework.routers import DefaultRouter
+
+router = DefaultRouter()
+
+router.register('datasets', DatasetViewset)
+
+
 urlpatterns = [
+    url(r'^', include(router.urls)),
+    #url(r'^', DatasetViewset.as_view(), name='dataset-list'),
     url(r'^admin/', admin.site.urls),
     url(r'^explore/', include('explorer.urls')),
     url(r'^focalsites/', include('explorer.focalurls')),

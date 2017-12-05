@@ -6,21 +6,23 @@ from netCDF4 import Dataset as nc
 from explorer.forms import DatasetForm
 from explorer.models import Dataset, Variable
 from explorer.parsers import EEMS3DParser
+from explorer.serializers import DatasetListSerializer
 
+from rest_framework import viewsets
+from rest_framework import generics
+from rest_framework.response import Response
 EEMS_TILE_SIZE = (500,500)
+
+
+class DatasetViewset(viewsets.ReadOnlyModelViewSet):
+    queryset = Dataset.objects.all()
+    serializer_class = DatasetListSerializer
 
 
 class ExplorerView(View):
     template_name = 'index.html'
 
     def get(self, request, *args, **kwargs):
-        return render(request, self.template_name)
-
-
-class MainLandingPage(View):
-    template_name = 'index_old.html'
-
-    def get(self, request):
         return render(request, self.template_name)
 
 
